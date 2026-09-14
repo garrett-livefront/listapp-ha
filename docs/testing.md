@@ -3,7 +3,7 @@
 ## Running locally
 
 ```
-python3 -m venv .venv
+python3.13 -m venv .venv
 .venv/bin/pip install -r requirements_test.txt
 .venv/bin/pytest
 .venv/bin/ruff check .
@@ -11,7 +11,9 @@ python3 -m venv .venv
 ```
 
 `pytest` runs through `pytest-homeassistant-custom-component`, which boots a real (mocked)
-`HomeAssistant` core so the integration is exercised the same way HA itself would load it.
+`HomeAssistant` core. Tests call `async_setup_entry`/`async_unload_entry` directly against a
+`MockConfigEntry` rather than through `hass.config_entries.async_setup` — that path imports a
+`config_flow` module the integration doesn't have yet. See PR #2 review discussion.
 
 ## Coverage gate
 
@@ -26,3 +28,9 @@ paths are genuinely impractical to exercise in CI.
 `.github/workflows/test.yml` and `lint.yml` run on every pull request and on push to `main` and
 `hacs-integration`. `.github/workflows/validate.yml` runs `hassfest` (blocking) and the HACS
 validation action (non-blocking — see its workflow file for why).
+
+`hassfest` and the HACS action are deliberately referenced by branch (`@master`/`@main`), not a
+pinned SHA, despite that being the general supply-chain-safe default: both validate against
+HA's/HACS's live current requirements, and a pinned SHA would silently drift stale and start
+passing PRs that a current HA release would reject — the opposite of what the check is for. This
+was a Copilot review comment on PR #2.
