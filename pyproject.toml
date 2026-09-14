@@ -1,0 +1,15 @@
+[project]
+name = "listapp-ha"
+version = "0.0.0"
+requires-python = ">=3.13"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "--cov=custom_components.listapp --cov-report=term-missing --cov-fail-under=95"
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
