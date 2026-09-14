@@ -3,7 +3,7 @@
 ## Running locally
 
 ```
-python3.13 -m venv .venv
+python3.14 -m venv .venv
 .venv/bin/pip install -r requirements_test.txt
 .venv/bin/pytest
 .venv/bin/ruff check .
@@ -11,9 +11,13 @@ python3.13 -m venv .venv
 ```
 
 `pytest` runs through `pytest-homeassistant-custom-component`, which boots a real (mocked)
-`HomeAssistant` core. Tests call `async_setup_entry`/`async_unload_entry` directly against a
-`MockConfigEntry` rather than through `hass.config_entries.async_setup` — that path imports a
-`config_flow` module the integration doesn't have yet. See PR #2 review discussion.
+`HomeAssistant` core. Tests set entries up through `hass.config_entries.async_setup`, with HTTP
+faked by `aioclient_mock`. Shared fixtures and payload builders live in `tests/conftest.py` and
+`tests/helpers.py`.
+
+Python 3.14 is required. The pin tracks a current HA release (`0.13.365` = HA 2026.9.2), and every
+HA release since 2026.3 requires 3.14. Bump the pin with `pytest-cov`, since the plugin pins
+`coverage` exactly.
 
 ## Coverage gate
 
