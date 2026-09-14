@@ -25,7 +25,8 @@
       "wrong_account": "You signed in with a different ListApp account than the one being re-linked."
     },
     "error": {
-      "too_many_lists": "Choose at most 25 lists."
+      "too_many_lists": "Choose at most 25 lists.",
+      "empty_selection": "Select at least one list"
     },
     "create_entry": {
       "default": "Your ListApp account is linked."
@@ -46,7 +47,8 @@
       }
     },
     "error": {
-      "too_many_lists": "Choose at most 25 lists."
+      "too_many_lists": "Choose at most 25 lists.",
+      "empty_selection": "Select at least one list"
     }
   },
   "exceptions": {

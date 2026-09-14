@@ -98,7 +98,9 @@ class ListAppFlowHandler(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, dom
         errors: dict[str, str] = {}
         if user_input is not None:
             selected = user_input[CONF_SELECTED_LISTS]
-            if len(selected) > MAX_SELECTED_LISTS:
+            if not selected:
+                errors[CONF_SELECTED_LISTS] = "empty_selection"
+            elif len(selected) > MAX_SELECTED_LISTS:
                 errors[CONF_SELECTED_LISTS] = "too_many_lists"
             else:
                 return self.async_create_entry(
@@ -121,7 +123,9 @@ class ListAppOptionsFlow(OptionsFlowWithReload):
         current = self.config_entry.options
         if user_input is not None:
             selected = user_input.get(CONF_SELECTED_LISTS)
-            if selected is not None and len(selected) > MAX_SELECTED_LISTS:
+            if selected is not None and len(selected) == 0:
+                errors[CONF_SELECTED_LISTS] = "empty_selection"
+            elif selected is not None and len(selected) > MAX_SELECTED_LISTS:
                 errors[CONF_SELECTED_LISTS] = "too_many_lists"
             elif selected is None and CONF_SELECTED_LISTS in current:
                 # No picker shown: keep the selection — see docs/architecture.md#list-picker

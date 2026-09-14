@@ -7,6 +7,7 @@ import random
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from http import HTTPStatus
+from typing import TYPE_CHECKING
 
 from aiohttp import ClientError, ClientSession, ClientTimeout, StreamReader, hdrs
 
@@ -16,6 +17,10 @@ from .const import (
     STREAM_BACKOFF_INITIAL_SECONDS,
     STREAM_BACKOFF_MAX_SECONDS,
 )
+
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,7 +51,7 @@ async def parse_sse(content: StreamReader) -> AsyncIterator[StreamEvent]:
         raw = await content.readline()
         if not raw:
             return
-        line = raw.decode("utf-8").rstrip("\r\n")
+        line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
         if line == "":
             if data_lines:
                 yield StreamEvent(event=event_type, data="\n".join(data_lines))
@@ -69,6 +74,8 @@ class ListAppEventStream:
     def __init__(
         self,
         *,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
         session: ClientSession,
         get_access_token: Callable[[], Awaitable[str]],
         base_url: str,
@@ -79,6 +86,8 @@ class ListAppEventStream:
         on_auth_failed: Callable[[], None],
         on_selection_rejected: Callable[[], None],
     ) -> None:
+        self._hass = hass
+        self._entry = entry
         self._session = session
         self._get_access_token = get_access_token
         self._base_url = base_url
@@ -92,7 +101,9 @@ class ListAppEventStream:
         self._connected = False
 
     def start(self) -> None:
-        self._task = asyncio.ensure_future(self._run())
+        self._task = self._entry.async_create_background_task(
+            self._hass, self._run(), "listapp_event_stream"
+        )
 
     async def stop(self) -> None:
         if self._task is None:
@@ -119,6 +130,8 @@ class ListAppEventStream:
                 return
             except (ClientError, TimeoutError, _Retryable) as err:
                 _LOGGER.debug("ListApp live update stream disconnected: %s", err)
+            except Exception as err:
+                _LOGGER.warning("ListApp live update stream hit an unexpected error: %s", err)
             finally:
                 self._on_state_change(False)
             if self._connected:

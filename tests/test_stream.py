@@ -2,10 +2,11 @@ import asyncio
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.listapp.api import ListAppAuthError, ListAppUnavailableError
-from custom_components.listapp.const import API_BASE_URL
+from custom_components.listapp.const import API_BASE_URL, DOMAIN
 from custom_components.listapp.stream import ListAppEventStream, StreamEvent, parse_sse
 
 STREAM_URL = f"{API_BASE_URL}/me/events/selected"
@@ -52,6 +53,11 @@ async def test_parse_sse_eof_ends_stream() -> None:
     assert events == []
 
 
+async def test_parse_sse_partial_multibyte_char_is_replaced() -> None:
+    events = await _collect([b"data: caf\xc3\n", b"\n"])
+    assert events == [StreamEvent(event="message", data="caf�")]
+
+
 def _stream(
     hass: HomeAssistant,
     *,
@@ -65,7 +71,11 @@ def _stream(
     async def token() -> str:
         return "test-token"
 
+    entry = MockConfigEntry(domain=DOMAIN)
+    entry.add_to_hass(hass)
     return ListAppEventStream(
+        hass=hass,
+        entry=entry,
         session=async_get_clientsession(hass),
         get_access_token=get_access_token or token,
         base_url=API_BASE_URL,
@@ -276,3 +286,37 @@ async def test_stop_cancels_task(hass: HomeAssistant, aioclient_mock: AiohttpCli
     await stream.stop()
 
     assert stream._task is None
+
+
+async def test_unexpected_exception_logs_warning_and_reconnects(
+    hass: HomeAssistant, monkeypatch, caplog
+) -> None:
+    from custom_components.listapp import stream as stream_module
+
+    monkeypatch.setattr(stream_module, "STREAM_BACKOFF_INITIAL_SECONDS", 0.005)
+
+    calls = 0
+
+    async def boom(self) -> None:
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(ListAppEventStream, "_connect_and_read", boom)
+    stream = _stream(hass)
+
+    with caplog.at_level("WARNING"):
+        stream.start()
+        await asyncio.sleep(0.05)
+        assert stream._task is not None and not stream._task.done()
+        await stream.stop()
+
+    assert calls >= 2
+    assert any("unexpected error" in message for message in caplog.messages)
+
+
+async def test_start_uses_entry_background_task(hass: HomeAssistant) -> None:
+    stream = _stream(hass)
+    stream.start()
+    assert stream._task in stream._entry._background_tasks
+    await stream.stop()

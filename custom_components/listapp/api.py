@@ -91,13 +91,15 @@ class ListAppClient:
     async def _request(self, method: str, path: str, json: Any = None) -> Any:
         token = await self._get_access_token()
         try:
-            async with asyncio.timeout(REQUEST_TIMEOUT_SECONDS):
-                response = await self._session.request(
+            async with (
+                asyncio.timeout(REQUEST_TIMEOUT_SECONDS),
+                self._session.request(
                     method,
                     f"{self._base_url}{path}",
                     json=json,
                     headers={hdrs.AUTHORIZATION: f"Bearer {token}"},
-                )
+                ) as response,
+            ):
                 status = response.status
                 if status == HTTPStatus.UNAUTHORIZED:
                     raise ListAppAuthError(f"{method} {path} was refused as unauthenticated")

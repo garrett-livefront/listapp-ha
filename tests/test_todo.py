@@ -129,6 +129,27 @@ async def test_move_item(
     assert [item["id"] for item in body["items"]] == expected
 
 
+@pytest.mark.parametrize("previous_uid", ["not-a-real-id", MILK_ID])
+async def test_move_item_invalid_previous_uid_is_refused(
+    hass: HomeAssistant, entity_id: str, aioclient_mock, hass_ws_client, previous_uid: str
+) -> None:
+    client = await hass_ws_client(hass)
+
+    await client.send_json_auto_id(
+        {
+            "type": "todo/item/move",
+            "entity_id": entity_id,
+            "uid": MILK_ID,
+            "previous_uid": previous_uid,
+        }
+    )
+    response = await client.receive_json()
+
+    assert not response["success"]
+    assert response["error"]["code"] == "failed"
+    assert not _calls(aioclient_mock, "PUT")
+
+
 @pytest.mark.parametrize(
     ("scope", "options"),
     [
@@ -262,7 +283,7 @@ async def test_list_removed_on_poll_404(
     # same behavior for the safety-net poll, not the initial fetch.
     aioclient_mock.clear_requests()
     aioclient_mock.get(f"{API_BASE_URL}/lists/{GROCERIES_ID}", status=404)
-    aioclient_mock.get(f"{API_BASE_URL}/me/events/selected", content=b"")
+    await hass.config_entries.async_entries(DOMAIN)[0].runtime_data.async_stop_stream()
 
     freezer.tick(UPDATE_INTERVAL + timedelta(seconds=1))
     async_fire_time_changed(hass)

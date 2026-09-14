@@ -121,6 +121,20 @@ async def test_too_many_lists_rejected(
     assert result["errors"] == {CONF_SELECTED_LISTS: "too_many_lists"}
 
 
+async def test_empty_selection_rejected(
+    hass: HomeAssistant, hass_client_no_auth, aioclient_mock
+) -> None:
+    register_lists(aioclient_mock, [groceries()])
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    await _authorize(hass, hass_client_no_auth, result, aioclient_mock, {"json": ME})
+    await _finish_to_picker(hass, result["flow_id"])
+
+    result = await _finish(hass, result["flow_id"], selected=[])
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_SELECTED_LISTS: "empty_selection"}
+
+
 async def test_duplicate_account_aborts(
     hass: HomeAssistant, hass_client_no_auth, aioclient_mock, config_entry: MockConfigEntry
 ) -> None:
@@ -250,6 +264,19 @@ async def test_options_too_many_lists_rejected(
 
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {CONF_SELECTED_LISTS: "too_many_lists"}
+
+
+async def test_options_empty_selection_rejected(
+    hass: HomeAssistant, setup_integration: MockConfigEntry, aioclient_mock
+) -> None:
+    result = await hass.config_entries.options.async_init(setup_integration.entry_id)
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_READ_ONLY: False, CONF_SELECTED_LISTS: []}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_SELECTED_LISTS: "empty_selection"}
 
 
 async def test_options_keep_selection_when_lists_unavailable(

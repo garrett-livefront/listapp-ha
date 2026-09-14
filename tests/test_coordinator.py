@@ -2,10 +2,13 @@ import asyncio
 import json
 from dataclasses import replace
 
+import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.listapp.const import (
+    API_BASE_URL,
+    CONF_SELECTED_LISTS,
     POLL_INTERVAL_FALLBACK,
     POLL_INTERVAL_STREAMING,
 )
@@ -268,6 +271,7 @@ async def test_member_upserted_without_role_schedules_refresh(
         member_upserted_ref(MEMBERSHIP_ID, ACCOUNT_ID, None),
     )
     await asyncio.sleep(0.6)
+    await coordinator.async_stop_stream()
     await hass.async_block_till_done(wait_background_tasks=True)
 
     assert coordinator.data[GROCERIES_ID].my_role == "EDITOR"
@@ -397,3 +401,59 @@ async def test_unload_cancels_stream_task(
 
     assert stream._task is None
     assert coordinator._stream is None
+
+
+async def test_periodic_poll_401_triggers_reauth(
+    hass: HomeAssistant, setup_integration: MockConfigEntry, aioclient_mock
+) -> None:
+    from homeassistant.exceptions import ConfigEntryAuthFailed
+
+    coordinator = setup_integration.runtime_data
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{API_BASE_URL}/lists/{GROCERIES_ID}", status=401)
+
+    with pytest.raises(ConfigEntryAuthFailed):
+        await coordinator._async_update_data()
+
+
+async def test_periodic_poll_5xx_raises_update_failed(
+    hass: HomeAssistant, setup_integration: MockConfigEntry, aioclient_mock
+) -> None:
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    coordinator = setup_integration.runtime_data
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{API_BASE_URL}/lists/{GROCERIES_ID}", status=503)
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+
+async def test_stop_stream_with_pending_batch_cancels_cleanly(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    coordinator = setup_integration.runtime_data
+    await _emit(coordinator, "item.deleted", GROCERIES_ID, deleted_ref(MILK_ID))
+    assert coordinator._batch_handle is not None
+
+    await coordinator.async_stop_stream()
+
+    assert coordinator._batch_handle is None
+    assert coordinator._pending == []
+    assert coordinator._stream is None
+
+
+async def test_start_stream_skips_when_no_active_lists(
+    hass: HomeAssistant, config_entry: MockConfigEntry, aioclient_mock, caplog
+) -> None:
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(config_entry, options={CONF_SELECTED_LISTS: []})
+    aioclient_mock.get(f"{API_BASE_URL}/lists", json=[])
+
+    with caplog.at_level("ERROR"):
+        assert await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    coordinator = config_entry.runtime_data
+    assert coordinator._stream is None
+    assert "rejected the selected lists" not in caplog.text

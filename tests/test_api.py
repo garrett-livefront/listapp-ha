@@ -1,3 +1,6 @@
+from http import HTTPStatus
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from aiohttp import ClientError
 from homeassistant.core import HomeAssistant
@@ -71,6 +74,24 @@ async def test_get_list_parses_my_role(
     lst = await client.async_get_list(GROCERIES_ID)
 
     assert lst.my_role == role
+
+
+async def test_error_response_is_released(hass: HomeAssistant) -> None:
+    async def token() -> str:
+        return "token"
+
+    response = MagicMock()
+    response.status = HTTPStatus.INTERNAL_SERVER_ERROR
+    response.__aenter__ = AsyncMock(return_value=response)
+    response.__aexit__ = AsyncMock(return_value=False)
+    session = MagicMock()
+    session.request = MagicMock(return_value=response)
+    client = ListAppClient(session, token)
+
+    with pytest.raises(ListAppUnavailableError):
+        await client.async_get_me()
+
+    response.__aexit__.assert_awaited_once()
 
 
 async def test_write_bodies(aioclient_mock: AiohttpClientMocker, client: ListAppClient) -> None:

@@ -118,8 +118,9 @@ with a user-chosen selection and live updates over one SSE connection; `iot_clas
 
 Entities exist only for lists the user selects, at setup (`config_flow.py`'s `select_lists` step,
 after linking the account) and in the options flow (added to the existing `init` step, alongside
-read-only mode). Both share `_lists_schema()`, a `cv.multi_select` built from `GET /lists`, capped
-at 25 (`MAX_SELECTED_LISTS`) — server-enforced too (`listapp-api` `docs/realtime-updates.md#ha-item-stream`).
+read-only mode). Both share `_lists_schema()`, a `cv.multi_select` built from `GET /lists`, requiring at least one
+(checked in the step handler — wrapping `cv.multi_select` in `vol.All` breaks HA's form
+serialization) and capped at 25 (`MAX_SELECTED_LISTS`) — server-enforced too (`listapp-api` `docs/realtime-updates.md#ha-item-stream`).
 Exceeding it re-shows the form with a `too_many_lists` error rather than truncating silently.
 
 - **At setup, a failed `GET /lists` aborts** (`oauth_unauthorized` for a 401, `cannot_connect`
@@ -141,11 +142,15 @@ from then on and the migration never runs again for it.
 
 One `aiohttp` SSE reader per config entry (`ListAppEventStream`), started in `async_setup_entry`
 after the first refresh and cancelled via `entry.async_on_unload` — covers both unload and reload.
+It runs as an entry background task (`entry.async_create_background_task`), so HA tracks it and
+cancels it on shutdown. It isn't started at all when no list is selected — there's nothing to
+stream, and the server would answer the empty `lists=` with a 400 that logs as a rejected selection.
 
 - **Parsing** (`parse_sse`) follows the SSE field rules: `data:` lines join with `\n` before
   dispatch, `event:` sets the type for that one event (default `message`), lines starting with `:`
   are comments (including the server's `: heartbeat` frames) and are skipped, and a blank line
-  dispatches.
+  dispatches. Bytes are decoded with `errors="replace"`, so a garbled frame reaches the coordinator
+  as undecodable JSON and is skipped instead of killing the reader.
 - **Heartbeat timeout** is `aiohttp.ClientTimeout(sock_read=...)` at 2.5x the server's 25s
   heartbeat period, not a manual watchdog — aiohttp already raises `TimeoutError` when no bytes
   arrive in that window, which is indistinguishable from a dead connection for our purposes.
@@ -154,7 +159,10 @@ after the first refresh and cancelled via `entry.async_on_unload` — covers bot
   `on_selection_rejected`, logged once, and the loop stops retrying so a broken selection doesn't
   spin. Everything else retryable (503, network errors, a clean close, the heartbeat timeout) →
   exponential backoff with jitter, the jittered delay capped at `STREAM_BACKOFF_MAX_SECONDS` (60s), resetting to
-  `STREAM_BACKOFF_INITIAL_SECONDS` (1s) after any successful connection.
+  `STREAM_BACKOFF_INITIAL_SECONDS` (1s) after any successful connection. Any other exception is a
+  last-resort catch: logged at WARNING and retried on the same backoff, so an unforeseen bug degrades
+  to reconnects rather than a silently dead stream. `CancelledError` isn't an `Exception`, so
+  `stop()` still ends the loop. Tests that wait on background tasks stop the stream first.
 - The access token is refreshed via the same `OAuth2Session`-backed closure the REST client uses,
   called fresh before every (re)connect attempt. A refused refresh (`ListAppAuthError`) is a 401;
   any other refresh failure retries with backoff, so a token-endpoint outage never starts reauth.

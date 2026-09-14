@@ -167,7 +167,16 @@ class ListAppTodoEntity(CoordinatorEntity[ListAppCoordinator], TodoListEntity):
 
     async def async_move_todo_item(self, uid: str, previous_uid: str | None = None) -> None:
         order = [item_id for item_id in self._item_ids() if item_id != uid]
-        order.insert(0 if previous_uid is None else order.index(previous_uid) + 1, uid)
+        if previous_uid is None:
+            index = 0
+        else:
+            try:
+                index = order.index(previous_uid) + 1
+            except ValueError as err:
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN, translation_key="write_refused"
+                ) from err
+        order.insert(index, uid)
         await self._async_write(
             lambda: self.coordinator.client.async_reorder_items(self._list_id, order)
         )

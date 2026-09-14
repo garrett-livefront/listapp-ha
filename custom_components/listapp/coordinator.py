@@ -120,7 +120,11 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         return result
 
     def async_start_stream(self) -> None:
+        if not self._active_ids:
+            return
         self._stream = ListAppEventStream(
+            hass=self.hass,
+            entry=self.config_entry,
             session=async_get_clientsession(self.hass),
             get_access_token=self.client.async_get_access_token,
             base_url=self.client.base_url,
