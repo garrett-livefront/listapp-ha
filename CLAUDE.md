@@ -21,3 +21,8 @@ https://forge.radhangs.com/listapp-ha-integration-plan-b2h9rr/
 
 - `custom_components/listapp/` — the integration
 - `hacs.json` — HACS metadata
+
+## Testing
+
+pytest + ruff, gated in CI. See [`docs/testing.md`](docs/testing.md) for how to run locally and why
+the coverage threshold is set where it is.
