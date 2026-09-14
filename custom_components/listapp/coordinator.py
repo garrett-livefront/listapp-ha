@@ -40,7 +40,7 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
     def can_write(self) -> bool:
         if self.config_entry.options.get(CONF_READ_ONLY, False):
             return False
-        granted = self.config_entry.data["token"].get("scope", SCOPE_WRITE)
+        granted = self.config_entry.data["token"].get("scope", "")
         return SCOPE_WRITE in granted.split()
 
     async def _async_fetch_list(self, list_id: str) -> ListAppList | None:

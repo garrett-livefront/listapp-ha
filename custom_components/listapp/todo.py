@@ -45,7 +45,13 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data
+    registry = er.async_get(hass)
     known: set[str] = set()
+    registered = {
+        registry_entry.unique_id.removeprefix(f"{coordinator.account_id}_")
+        for registry_entry in er.async_entries_for_config_entry(registry, entry.entry_id)
+        if registry_entry.domain == TODO_DOMAIN
+    }
 
     @callback
     def sync_entities() -> None:
@@ -53,8 +59,9 @@ async def async_setup_entry(
         if added := current - known:
             known.update(added)
             async_add_entities(ListAppTodoEntity(coordinator, list_id) for list_id in added)
-        registry = er.async_get(hass)
-        for list_id in known - current:
+        stale = (known | registered) - current
+        registered.clear()
+        for list_id in stale:
             known.discard(list_id)
             unique_id = f"{coordinator.account_id}_{list_id}"
             if entity_id := registry.async_get_entity_id(TODO_DOMAIN, DOMAIN, unique_id):

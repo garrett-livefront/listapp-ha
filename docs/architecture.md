@@ -56,7 +56,8 @@ override both, and they're read when the integration module is imported. See the
 - **One service device per account**, named "ListApp", so entity IDs come out as
   `todo.listapp_<list title>`. The entry title is the account email, to tell entries apart.
 - **Lists appear and disappear with polling.** New list IDs add entities. Vanished ones are removed
-  from the entity registry, so there are no orphaned `unavailable` entities left behind. A list
+  from the entity registry, so there are no orphaned `unavailable` entities left behind — including
+  lists deleted while Home Assistant was stopped, which the first refresh reconciles. A list
   deleted between the two requests is skipped rather than failing the whole refresh.
 - **Writes:** create (appended at `max(position) + 1`), update (rename, check, uncheck), delete,
   and move (sends the full order to `PUT /items/reorder`). Each write asks the coordinator for a

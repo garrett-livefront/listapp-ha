@@ -1,12 +1,15 @@
+import asyncio
+
 import pytest
 from aiohttp import ClientError
 from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_entry_oauth2_flow
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
-from custom_components.listapp.const import API_BASE_URL, OAUTH_TOKEN_URL
-from custom_components.listapp.oauth import ListAppOAuth2Implementation
+from custom_components.listapp.const import API_BASE_URL, DOMAIN, OAUTH_TOKEN_URL
+from custom_components.listapp.oauth import ListAppOAuth2Implementation, async_ensure_implementation
 
 from .conftest import register_lists
 from .helpers import groceries
@@ -97,3 +100,25 @@ async def test_refresh_failures(
 
     assert config_entry.state is state
     assert _has_reauth_flow(hass) is reauth
+
+
+@pytest.mark.parametrize("token_expires_in", [-60])
+async def test_refresh_timeout_retries_without_reauth(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, config_entry: MockConfigEntry
+) -> None:
+    aioclient_mock.post(OAUTH_TOKEN_URL, exc=TimeoutError())
+
+    await _setup(hass, config_entry)
+
+    assert config_entry.state is ConfigEntryState.SETUP_RETRY
+    assert not _has_reauth_flow(hass)
+
+
+async def test_concurrent_registration_keeps_one_implementation(hass: HomeAssistant) -> None:
+    await asyncio.gather(*(async_ensure_implementation(hass) for _ in range(3)))
+    first = (await config_entry_oauth2_flow.async_get_implementations(hass, DOMAIN))[DOMAIN]
+
+    await async_ensure_implementation(hass)
+
+    implementations = await config_entry_oauth2_flow.async_get_implementations(hass, DOMAIN)
+    assert implementations[DOMAIN] is first

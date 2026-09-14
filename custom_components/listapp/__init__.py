@@ -27,7 +27,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ListAppConfigEntry) -> b
             await session.async_ensure_token_valid()
         except OAuth2TokenRequestReauthError as err:
             raise ListAppAuthError("ListApp refused the refresh token") from err
-        except ClientError as err:
+        except (TimeoutError, ClientError) as err:
             raise ListAppUnavailableError("Could not refresh the ListApp token") from err
         return session.token["access_token"]
 

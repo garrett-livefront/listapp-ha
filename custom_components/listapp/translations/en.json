@@ -11,7 +11,8 @@
     },
     "abort": {
       "already_configured": "This ListApp account is already linked.",
-      "cannot_connect": "Could not reach ListApp. Try again later.",
+      "oauth_unauthorized": "ListApp did not accept the sign-in. Try linking your account again.",
+      "cannot_connect":"Could not reach ListApp. Try again later.",
       "wrong_account": "You signed in with a different ListApp account than the one being re-linked."
     },
     "create_entry": {

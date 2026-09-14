@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_entry_oauth2_flow
+from homeassistant.util.hass_dict import HassKey
 
 from .const import (
     DOMAIN,
@@ -23,12 +26,16 @@ class ListAppOAuth2Implementation(config_entry_oauth2_flow.LocalOAuth2Implementa
         return "ListApp"
 
 
+_REGISTRATION_LOCK: HassKey[asyncio.Lock] = HassKey(f"{DOMAIN}_registration_lock")
+
+
 async def async_ensure_implementation(hass: HomeAssistant) -> None:
     # Registered once: replacing it would regenerate the PKCE verifier under an in-flight flow.
-    if DOMAIN not in await config_entry_oauth2_flow.async_get_implementations(hass, DOMAIN):
-        config_entry_oauth2_flow.async_register_implementation(
-            hass, DOMAIN, ListAppOAuth2Implementation(hass)
-        )
+    async with hass.data.setdefault(_REGISTRATION_LOCK, asyncio.Lock()):
+        if DOMAIN not in await config_entry_oauth2_flow.async_get_implementations(hass, DOMAIN):
+            config_entry_oauth2_flow.async_register_implementation(
+                hass, DOMAIN, ListAppOAuth2Implementation(hass)
+            )
 
 
 def requested_scopes(read_only: bool) -> str:

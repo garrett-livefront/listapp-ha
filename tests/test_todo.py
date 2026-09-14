@@ -8,13 +8,15 @@ from homeassistant.config_entries import SOURCE_REAUTH
 from homeassistant.const import ATTR_ENTITY_ID, ATTR_SUPPORTED_FEATURES
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
-from custom_components.listapp.const import API_BASE_URL, CONF_READ_ONLY, UPDATE_INTERVAL
+from custom_components.listapp.const import API_BASE_URL, CONF_READ_ONLY, DOMAIN, UPDATE_INTERVAL
 
 from .conftest import register_lists
 from .helpers import (
+    ACCOUNT_ID,
     BREAD_ID,
     CHORES_ID,
     EGGS_ID,
@@ -123,7 +125,11 @@ async def test_move_item(
 
 @pytest.mark.parametrize(
     ("scope", "options"),
-    [(READ_SCOPE, {}), ("offline_access lists:read lists:write", {CONF_READ_ONLY: True})],
+    [
+        (READ_SCOPE, {}),
+        ("offline_access lists:read lists:write", {CONF_READ_ONLY: True}),
+        (None, {}),
+    ],
 )
 async def test_read_only_refuses_writes(
     hass: HomeAssistant, entity_id: str, aioclient_mock
@@ -175,6 +181,23 @@ async def test_lists_added_and_removed(
     chores = todo_entity_id(hass, CHORES_ID)
     assert chores is not None
     assert hass.states.get(chores).state == "0"
+
+
+async def test_orphan_from_previous_run_is_removed(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, config_entry: MockConfigEntry
+) -> None:
+    config_entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    registry.async_get_or_create(
+        TODO_DOMAIN, DOMAIN, f"{ACCOUNT_ID}_{CHORES_ID}", config_entry=config_entry
+    )
+    register_lists(aioclient_mock, [groceries()])
+
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert todo_entity_id(hass, CHORES_ID) is None
+    assert todo_entity_id(hass, GROCERIES_ID) is not None
 
 
 async def test_list_gone_between_requests_is_skipped(

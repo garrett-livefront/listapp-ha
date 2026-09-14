@@ -47,8 +47,8 @@ def config_entry(scope: str, options: dict[str, Any], token_expires_in: int) -> 
                 "token_type": "bearer",
                 "expires_in": token_expires_in,
                 "expires_at": time.time() + token_expires_in,
-                "scope": scope,
-            },
+            }
+            | ({"scope": scope} if scope is not None else {}),
         },
         options=options,
     )
