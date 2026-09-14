@@ -99,7 +99,9 @@ class ListAppTodoEntity(CoordinatorEntity[ListAppCoordinator], TodoListEntity):
 
     @property
     def supported_features(self) -> TodoListEntityFeature:
-        return WRITE_FEATURES if self.coordinator.can_write else TodoListEntityFeature(0)
+        if self.coordinator.can_write_list(self._list_id):
+            return WRITE_FEATURES
+        return TodoListEntityFeature(0)
 
     @property
     def todo_items(self) -> list[TodoItem] | None:

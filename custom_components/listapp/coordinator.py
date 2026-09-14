@@ -26,6 +26,7 @@ from .const import (
     DOMAIN,
     POLL_INTERVAL_FALLBACK,
     POLL_INTERVAL_STREAMING,
+    ROLE_VIEWER,
     SCOPE_WRITE,
     STREAM_BURST_SECONDS,
     STREAM_HEARTBEAT_TIMEOUT_SECONDS,
@@ -55,6 +56,9 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         self._stream: ListAppEventStream | None = None
         self._pending: list[tuple[_EventHandler, str, dict]] = []
         self._batch_handle: asyncio.TimerHandle | None = None
+        self._pending_role_refresh = False
+        self._role_overrides: dict[str, tuple[str, int]] = {}
+        self._poll_start_count = 0
 
     @property
     def account_id(self) -> str:
@@ -68,6 +72,18 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         granted = self.config_entry.data["token"].get("scope", "")
         return SCOPE_WRITE in granted.split()
 
+    def can_write_list(self, list_id: str) -> bool:
+        """Combine the global read-only option/scope with this list's own role.
+
+        A None role means an older server that omits myRole — fall back to H2 behavior: attempt
+        the write and let the server's 403/404 raise "may be view-only". See
+        docs/architecture.md#roles.
+        """
+        if not self.can_write:
+            return False
+        lst = self.data.get(list_id)
+        return lst is None or lst.my_role is None or lst.my_role != ROLE_VIEWER
+
     async def _async_fetch_list(self, list_id: str) -> ListAppList | None:
         try:
             return await self.client.async_get_list(list_id)
@@ -76,6 +92,8 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
             return None
 
     async def _async_update_data(self) -> dict[str, ListAppList]:
+        poll_count = self._poll_start_count
+        self._poll_start_count += 1
         try:
             lists = await asyncio.gather(
                 *(self._async_fetch_list(list_id) for list_id in list(self._active_ids))
@@ -85,7 +103,21 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         except ListAppError as err:
             raise UpdateFailed(str(err)) from err
         # Re-checked: a stream removal can land while the requests are in flight.
-        return {lst.id: lst for lst in lists if lst is not None and lst.id in self._active_ids}
+        result = {lst.id: lst for lst in lists if lst is not None and lst.id in self._active_ids}
+        # A poll started before a member.upserted demotion can finish after it and carry a
+        # stale role. Reapply the override only onto polls that were already in flight when the
+        # event landed (`poll_count` below its recorded generation) — any poll that *started*
+        # after the event reflects the server's current state and wins outright, so a later,
+        # unrelated role change can still recover even if the event that would have cleared the
+        # override was missed. See docs/architecture.md#roles.
+        for list_id, (role, event_generation) in list(self._role_overrides.items()):
+            if poll_count >= event_generation:
+                del self._role_overrides[list_id]
+                continue
+            lst = result.get(list_id)
+            if lst is not None:
+                result[list_id] = replace(lst, my_role=role)
+        return result
 
     def async_start_stream(self) -> None:
         self._stream = ListAppEventStream(
@@ -146,6 +178,9 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         for handler, list_id, payload in ops:
             handler(self, data, list_id, payload)
         self.async_set_updated_data(data)
+        if self._pending_role_refresh:
+            self._pending_role_refresh = False
+            self.hass.async_create_task(self.async_request_refresh())
 
     def _apply_item_upserted(self, data: dict, list_id: str, payload: dict) -> None:
         item = ListAppItem(
@@ -194,12 +229,29 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
             raise ValueError("list.deleted names a different list")
         data.pop(list_id, None)
         self._active_ids.discard(list_id)
+        self._role_overrides.pop(list_id, None)
 
     def _apply_member_deleted(self, data: dict, list_id: str, payload: dict) -> None:
         if payload.get("userId") != self.account_id:
             return
         data.pop(list_id, None)
         self._active_ids.discard(list_id)
+        self._role_overrides.pop(list_id, None)
+
+    def _apply_member_upserted(self, data: dict, list_id: str, payload: dict) -> None:
+        if payload.get("userId") != self.account_id:
+            return
+        lst = data.get(list_id)
+        if lst is None:
+            return
+        role = payload.get("role")
+        if role is None:
+            self._pending_role_refresh = True
+            return
+        # Recorded so a poll already in flight can't overwrite this with a stale role — see
+        # _async_update_data and docs/architecture.md#roles.
+        self._role_overrides[list_id] = (role, self._poll_start_count)
+        data[lst.id] = replace(lst, my_role=role)
 
 
 type _EventHandler = Callable[[ListAppCoordinator, dict, str, dict], None]
@@ -211,4 +263,5 @@ _EVENT_HANDLERS: dict[str, _EventHandler] = {
     "list.updated": ListAppCoordinator._apply_list_updated,
     "list.deleted": ListAppCoordinator._apply_list_deleted,
     "member.deleted": ListAppCoordinator._apply_member_deleted,
+    "member.upserted": ListAppCoordinator._apply_member_upserted,
 }
