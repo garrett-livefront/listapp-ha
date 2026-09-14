@@ -134,7 +134,7 @@ after the first refresh and cancelled via `entry.async_on_unload` — covers bot
   selection — shouldn't happen given the picker's own cap, but the server is the source of truth) →
   `on_selection_rejected`, logged once, and the loop stops retrying so a broken selection doesn't
   spin. Everything else retryable (503, network errors, a clean close, the heartbeat timeout) →
-  exponential backoff with jitter, capped at `STREAM_BACKOFF_MAX_SECONDS` (60s), resetting to
+  exponential backoff with jitter, the jittered delay capped at `STREAM_BACKOFF_MAX_SECONDS` (60s), resetting to
   `STREAM_BACKOFF_INITIAL_SECONDS` (1s) after any successful connection.
 - The access token is refreshed via the same `OAuth2Session`-backed closure the REST client uses,
   called fresh before every (re)connect attempt. A refused refresh (`ListAppAuthError`) is a 401;
@@ -181,6 +181,17 @@ if one isn't already pending (`STREAM_BURST_SECONDS` = 0.5s), so a burst lands a
 replays them onto whatever `data` is current, so a safety-net poll finishing mid-batch isn't
 overwritten by a stale copy. Each event is also trial-applied to a scratch copy when it arrives,
 so a malformed payload is dropped then and can't fail the flush. (Copilot review comment on PR #4.)
+
+- **Replay can briefly re-apply an event a poll already superseded, deliberately.** If a poll
+  returns a newer edit before an older queued event flushes, the flush writes the older value. It
+  isn't corrected with `updatedAt` or a poll/flush lock, because the newer edit also arrives on the
+  stream as its own event, queued after the older one and replayed after it, so the data converges
+  within the same burst or the next one. Only a *dropped* newer event leaves the stale value, and
+  that's the same exposure as any missed event, which the safety-net poll exists for. (Copilot
+  review comment on PR #4, round 2.)
+- **A poll result is filtered against `_active_ids` when it returns**, not only when it starts, so a
+  `list.deleted`/`member.deleted` that lands while the requests are in flight isn't undone by the
+  poll re-adding that list. (Copilot review comment on PR #4, round 2.)
 
 ### Safety-net poll
 

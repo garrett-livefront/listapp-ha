@@ -132,6 +132,22 @@ async def test_event_for_unselected_list_ignored(
     assert coordinator.data == before
 
 
+async def test_poll_drops_list_removed_while_in_flight(
+    hass: HomeAssistant, setup_integration: MockConfigEntry, monkeypatch
+) -> None:
+    coordinator = setup_integration.runtime_data
+    fetched = coordinator.data[GROCERIES_ID]
+
+    async def get_list(list_id: str):
+        await _emit(coordinator, "list.deleted", GROCERIES_ID, deleted_ref(GROCERIES_ID))
+        await asyncio.sleep(0.6)
+        return fetched
+
+    monkeypatch.setattr(coordinator.client, "async_get_list", get_list)
+
+    assert await coordinator._async_update_data() == {}
+
+
 async def test_list_deleted_removes_list(
     hass: HomeAssistant, setup_integration: MockConfigEntry
 ) -> None:

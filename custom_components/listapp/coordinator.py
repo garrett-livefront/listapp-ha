@@ -84,7 +84,8 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
             raise ConfigEntryAuthFailed(str(err)) from err
         except ListAppError as err:
             raise UpdateFailed(str(err)) from err
-        return {lst.id: lst for lst in lists if lst is not None}
+        # Re-checked: a stream removal can land while the requests are in flight.
+        return {lst.id: lst for lst in lists if lst is not None and lst.id in self._active_ids}
 
     def async_start_stream(self) -> None:
         self._stream = ListAppEventStream(

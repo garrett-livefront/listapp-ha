@@ -132,6 +132,7 @@ class ListAppOptionsFlow(OptionsFlowWithReload):
                 return self.async_create_entry(data=user_input)
 
         schema = vol.Schema({vol.Required(CONF_READ_ONLY, default=False): bool})
+        suggested = dict(current)
         available = await self._async_available_lists()
         if available is not None:
             ids = {lst["id"] for lst in available}
@@ -143,9 +144,10 @@ class ListAppOptionsFlow(OptionsFlowWithReload):
                 if list_id in ids
             ]
             schema = schema.extend(_lists_schema(available, default).schema)
+            suggested[CONF_SELECTED_LISTS] = default
         return self.async_show_form(
             step_id="init",
-            data_schema=self.add_suggested_values_to_schema(schema, self.config_entry.options),
+            data_schema=self.add_suggested_values_to_schema(schema, suggested),
             errors=errors,
         )
 

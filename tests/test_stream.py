@@ -42,6 +42,11 @@ async def test_parse_sse_default_event_type_resets() -> None:
     assert [e.event for e in events] == ["list.deleted", "message"]
 
 
+async def test_parse_sse_empty_event_name_is_message() -> None:
+    events = await _collect([b"event:\n", b"data: a\n", b"\n"])
+    assert [e.event for e in events] == ["message"]
+
+
 async def test_parse_sse_eof_ends_stream() -> None:
     events = await _collect([b"data: incomplete\n"])
     assert events == []
@@ -166,6 +171,39 @@ async def test_backoff_grows_while_never_connecting(
     await stream.stop()
 
     assert jitter_bounds[:3] == [0.0025, 0.005, 0.01]
+
+
+async def test_jittered_delay_never_exceeds_cap(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, monkeypatch
+) -> None:
+    import types
+
+    from custom_components.listapp import stream as stream_module
+
+    aioclient_mock.get(STREAM_URL, status=503)
+    monkeypatch.setattr(stream_module, "STREAM_BACKOFF_INITIAL_SECONDS", 0.01)
+    monkeypatch.setattr(stream_module, "STREAM_BACKOFF_MAX_SECONDS", 0.01)
+    monkeypatch.setattr(stream_module.random, "uniform", lambda low, high: high)
+    delays: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        delays.append(delay)
+        await asyncio.sleep(0)
+
+    fake_asyncio = types.SimpleNamespace(
+        sleep=fake_sleep,
+        ensure_future=asyncio.ensure_future,
+        CancelledError=asyncio.CancelledError,
+    )
+    monkeypatch.setattr(stream_module, "asyncio", fake_asyncio)
+    stream = _stream(hass)
+
+    stream.start()
+    await asyncio.sleep(0.05)
+    await stream.stop()
+
+    assert delays
+    assert max(delays) == 0.01
 
 
 async def test_token_refresh_auth_error_triggers_reauth(hass: HomeAssistant) -> None:

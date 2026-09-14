@@ -288,3 +288,16 @@ async def test_options_on_unloaded_entry(
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert config_entry.options == {CONF_READ_ONLY: False, **options}
+
+
+async def test_options_default_drops_lists_no_longer_available(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    stale = "1f7b0000-0000-4000-8000-0000000000ff"
+    hass.config_entries.async_update_entry(
+        setup_integration, options={CONF_SELECTED_LISTS: [GROCERIES_ID, stale]}
+    )
+    result = await hass.config_entries.options.async_init(setup_integration.entry_id)
+
+    field = next(k for k in result["data_schema"].schema if k == CONF_SELECTED_LISTS)
+    assert field.description["suggested_value"] == [GROCERIES_ID]

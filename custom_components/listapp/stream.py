@@ -60,7 +60,7 @@ async def parse_sse(content: StreamReader) -> AsyncIterator[StreamEvent]:
         if field == "data":
             data_lines.append(value)
         elif field == "event":
-            event_type = value
+            event_type = value or "message"
 
 
 class ListAppEventStream:
@@ -122,7 +122,8 @@ class ListAppEventStream:
                 self._on_state_change(False)
             if self._connected:
                 backoff = STREAM_BACKOFF_INITIAL_SECONDS
-            await asyncio.sleep(backoff + random.uniform(0, backoff * 0.5))
+            delay = backoff + random.uniform(0, backoff * 0.5)
+            await asyncio.sleep(min(delay, STREAM_BACKOFF_MAX_SECONDS))
             backoff = min(backoff * 2, STREAM_BACKOFF_MAX_SECONDS)
 
     async def _connect_and_read(self) -> None:
