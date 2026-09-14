@@ -34,8 +34,10 @@ def item_payload(item_id: str, content: str, position: int, checked: bool = Fals
     }
 
 
-def list_payload(list_id: str, title: str, items: list[dict[str, Any]]) -> dict:
-    return {
+def list_payload(
+    list_id: str, title: str, items: list[dict[str, Any]], my_role: str | None = "OWNER"
+) -> dict:
+    payload = {
         "id": list_id,
         "ownerId": ACCOUNT_ID,
         "ownerDisplayName": "Sam",
@@ -47,6 +49,9 @@ def list_payload(list_id: str, title: str, items: list[dict[str, Any]]) -> dict:
         "members": [],
         "items": items,
     }
+    if my_role is not None:
+        payload["myRole"] = my_role
+    return payload
 
 
 # Server event shapes, keyed exactly as listapp-api serializes them (hacs-integration):
@@ -71,6 +76,13 @@ def deleted_ref(ref_id: str) -> dict:
 
 def member_deleted_ref(member_id: str, user_id: str | None) -> dict:
     return {"id": member_id, "userId": user_id}
+
+
+def member_upserted_ref(member_id: str, user_id: str | None, role: str | None) -> dict:
+    ref = {"id": member_id, "userId": user_id}
+    if role is not None:
+        ref["role"] = role
+    return ref
 
 
 def reordered_items_ref(positions: list[tuple[str, int]]) -> dict:

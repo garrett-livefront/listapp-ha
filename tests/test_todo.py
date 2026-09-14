@@ -1,3 +1,5 @@
+import asyncio
+import json
 from datetime import timedelta
 from typing import Any
 
@@ -13,6 +15,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry, async_
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.listapp.const import API_BASE_URL, CONF_READ_ONLY, DOMAIN, UPDATE_INTERVAL
+from custom_components.listapp.stream import StreamEvent
 
 from .conftest import register_lists
 from .helpers import (
@@ -24,6 +27,10 @@ from .helpers import (
     MILK_ID,
     READ_SCOPE,
     groceries,
+    item_payload,
+    list_change_event,
+    list_payload,
+    member_upserted_ref,
     todo_entity_id,
 )
 
@@ -160,6 +167,88 @@ async def test_write_errors(
         if flow["context"]["source"] == SOURCE_REAUTH
     ]
     assert bool(reauth) is (status == 401)
+
+
+@pytest.mark.parametrize(
+    ("role", "read_only_option", "expected_features"),
+    [
+        ("OWNER", False, 15),
+        ("EDITOR", False, 15),
+        ("VIEWER", False, 0),
+        ("OWNER", True, 0),
+        ("EDITOR", True, 0),
+        ("VIEWER", True, 0),
+        (None, False, 15),  # missing myRole: fall back to H2, don't restrict up front
+    ],
+)
+async def test_supported_features_follow_role_and_read_only_option(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    role: str | None,
+    read_only_option: bool,
+    expected_features: int,
+) -> None:
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(config_entry, options={CONF_READ_ONLY: read_only_option})
+    register_lists(aioclient_mock, [list_payload(GROCERIES_ID, "Groceries", [], my_role=role)])
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    state = hass.states.get(todo_entity_id(hass, GROCERIES_ID))
+    assert state.attributes[ATTR_SUPPORTED_FEATURES] == expected_features
+
+
+async def test_viewer_write_refused_without_api_call(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    items = [item_payload(MILK_ID, "Milk", 0)]
+    register_lists(
+        aioclient_mock, [list_payload(GROCERIES_ID, "Groceries", items, my_role="VIEWER")]
+    )
+    config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    entity_id = todo_entity_id(hass, GROCERIES_ID)
+    aioclient_mock.clear_requests()
+
+    with pytest.raises(ServiceValidationError):
+        await _call(hass, "add_item", entity_id, item="Butter")
+
+    assert not aioclient_mock.mock_calls
+
+
+async def test_role_demotion_updates_supported_features(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    register_lists(aioclient_mock, [list_payload(GROCERIES_ID, "Groceries", [], my_role="EDITOR")])
+    config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    entity_id = todo_entity_id(hass, GROCERIES_ID)
+    assert hass.states.get(entity_id).attributes[ATTR_SUPPORTED_FEATURES] == 15
+
+    coordinator = config_entry.runtime_data
+    coordinator._handle_stream_event(
+        StreamEvent(
+            event="member.upserted",
+            data=json.dumps(
+                list_change_event(
+                    "member.upserted",
+                    GROCERIES_ID,
+                    member_upserted_ref("membership-1", ACCOUNT_ID, "VIEWER"),
+                )
+            ),
+        )
+    )
+    await asyncio.sleep(0.6)
+    await hass.async_block_till_done()
+
+    assert hass.states.get(entity_id).attributes[ATTR_SUPPORTED_FEATURES] == 0
 
 
 async def test_list_removed_on_poll_404(

@@ -14,7 +14,7 @@ from custom_components.listapp.api import (
 )
 from custom_components.listapp.const import API_BASE_URL
 
-from .helpers import BREAD_ID, EGGS_ID, GROCERIES_ID, MILK_ID, groceries
+from .helpers import BREAD_ID, EGGS_ID, GROCERIES_ID, MILK_ID, groceries, list_payload
 
 
 @pytest.fixture
@@ -57,6 +57,20 @@ async def test_get_list_sorts_items_and_sends_bearer(
 
     assert [item.id for item in lst.items] == [MILK_ID, BREAD_ID, EGGS_ID]
     assert aioclient_mock.mock_calls[0][3]["Authorization"] == "Bearer token"
+
+
+@pytest.mark.parametrize("role", ["OWNER", "EDITOR", "VIEWER", None])
+async def test_get_list_parses_my_role(
+    aioclient_mock: AiohttpClientMocker, client: ListAppClient, role: str | None
+) -> None:
+    aioclient_mock.get(
+        f"{API_BASE_URL}/lists/{GROCERIES_ID}",
+        json=list_payload(GROCERIES_ID, "Groceries", [], my_role=role),
+    )
+
+    lst = await client.async_get_list(GROCERIES_ID)
+
+    assert lst.my_role == role
 
 
 async def test_write_bodies(aioclient_mock: AiohttpClientMocker, client: ListAppClient) -> None:

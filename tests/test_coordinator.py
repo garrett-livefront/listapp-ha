@@ -24,6 +24,7 @@ from .helpers import (
     list_change_event,
     list_payload,
     member_deleted_ref,
+    member_upserted_ref,
     reordered_items_ref,
 )
 
@@ -109,12 +110,19 @@ async def test_list_updated_renames(
     hass: HomeAssistant, setup_integration: MockConfigEntry
 ) -> None:
     coordinator = setup_integration.runtime_data
-    summary = {k: v for k, v in list_payload(GROCERIES_ID, "Shopping", []).items() if k != "items"}
+    assert coordinator.data[GROCERIES_ID].my_role == "OWNER"
+    # myRole is null on list.updated — see docs/architecture.md#roles.
+    summary = {
+        k: v
+        for k, v in list_payload(GROCERIES_ID, "Shopping", [], my_role=None).items()
+        if k != "items"
+    }
     await _emit(coordinator, "list.updated", GROCERIES_ID, summary)
     await asyncio.sleep(0.6)
 
     assert coordinator.data[GROCERIES_ID].title == "Shopping"
     assert coordinator.data[GROCERIES_ID].items
+    assert coordinator.data[GROCERIES_ID].my_role == "OWNER"
 
 
 async def test_event_for_unselected_list_ignored(
@@ -188,9 +196,60 @@ async def test_unknown_event_type_ignored(
     hass: HomeAssistant, setup_integration: MockConfigEntry
 ) -> None:
     coordinator = setup_integration.runtime_data
-    coordinator._handle_stream_event(StreamEvent(event="member.upserted", data="{}"))
+    coordinator._handle_stream_event(StreamEvent(event="list.muted", data="{}"))
     await asyncio.sleep(0.6)
     assert coordinator._pending == []
+
+
+async def test_member_upserted_for_self_updates_role(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    coordinator = setup_integration.runtime_data
+    await _emit(
+        coordinator,
+        "member.upserted",
+        GROCERIES_ID,
+        member_upserted_ref(MEMBERSHIP_ID, ACCOUNT_ID, "VIEWER"),
+    )
+    await asyncio.sleep(0.6)
+
+    assert coordinator.data[GROCERIES_ID].my_role == "VIEWER"
+
+
+async def test_member_upserted_for_other_user_ignored(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    coordinator = setup_integration.runtime_data
+    await _emit(
+        coordinator,
+        "member.upserted",
+        GROCERIES_ID,
+        member_upserted_ref(MEMBERSHIP_ID, OTHER_ACCOUNT_ID, "VIEWER"),
+    )
+    await asyncio.sleep(0.6)
+
+    assert coordinator.data[GROCERIES_ID].my_role == "OWNER"
+
+
+async def test_member_upserted_without_role_schedules_refresh(
+    hass: HomeAssistant, setup_integration: MockConfigEntry, aioclient_mock
+) -> None:
+    coordinator = setup_integration.runtime_data
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(
+        f"{coordinator.client.base_url}/lists/{GROCERIES_ID}",
+        json=list_payload(GROCERIES_ID, "Groceries", [], my_role="EDITOR"),
+    )
+    await _emit(
+        coordinator,
+        "member.upserted",
+        GROCERIES_ID,
+        member_upserted_ref(MEMBERSHIP_ID, ACCOUNT_ID, None),
+    )
+    await asyncio.sleep(0.6)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert coordinator.data[GROCERIES_ID].my_role == "EDITOR"
 
 
 async def test_malformed_frames_are_ignored(

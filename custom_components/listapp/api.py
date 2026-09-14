@@ -45,6 +45,9 @@ class ListAppList:
     owner_id: str
     title: str
     items: list[ListAppItem]
+    # Caller's own role, "OWNER" | "EDITOR" | "VIEWER". None means unknown — an older server
+    # that omits myRole, never a real role. See docs/architecture.md#roles.
+    my_role: str | None = None
 
 
 def _parse_list(data: dict[str, Any]) -> ListAppList:
@@ -58,7 +61,13 @@ def _parse_list(data: dict[str, Any]) -> ListAppList:
         for item in data["items"]
     ]
     items.sort(key=lambda item: item.position)
-    return ListAppList(id=data["id"], owner_id=data["ownerId"], title=data["title"], items=items)
+    return ListAppList(
+        id=data["id"],
+        owner_id=data["ownerId"],
+        title=data["title"],
+        items=items,
+        my_role=data.get("myRole"),
+    )
 
 
 class ListAppClient:

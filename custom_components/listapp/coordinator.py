@@ -26,6 +26,7 @@ from .const import (
     DOMAIN,
     POLL_INTERVAL_FALLBACK,
     POLL_INTERVAL_STREAMING,
+    ROLE_VIEWER,
     SCOPE_WRITE,
     STREAM_BURST_SECONDS,
     STREAM_HEARTBEAT_TIMEOUT_SECONDS,
@@ -55,6 +56,7 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         self._stream: ListAppEventStream | None = None
         self._pending: list[tuple[_EventHandler, str, dict]] = []
         self._batch_handle: asyncio.TimerHandle | None = None
+        self._pending_role_refresh = False
 
     @property
     def account_id(self) -> str:
@@ -67,6 +69,18 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
             return False
         granted = self.config_entry.data["token"].get("scope", "")
         return SCOPE_WRITE in granted.split()
+
+    def can_write_list(self, list_id: str) -> bool:
+        """Combine the global read-only option/scope with this list's own role.
+
+        A None role means an older server that omits myRole — fall back to H2 behavior: attempt
+        the write and let the server's 403/404 raise "may be view-only". See
+        docs/architecture.md#roles.
+        """
+        if not self.can_write:
+            return False
+        lst = self.data.get(list_id)
+        return lst is None or lst.my_role is None or lst.my_role != ROLE_VIEWER
 
     async def _async_fetch_list(self, list_id: str) -> ListAppList | None:
         try:
@@ -146,6 +160,9 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         for handler, list_id, payload in ops:
             handler(self, data, list_id, payload)
         self.async_set_updated_data(data)
+        if self._pending_role_refresh:
+            self._pending_role_refresh = False
+            self.hass.async_create_task(self.async_request_refresh())
 
     def _apply_item_upserted(self, data: dict, list_id: str, payload: dict) -> None:
         item = ListAppItem(
@@ -201,6 +218,17 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         data.pop(list_id, None)
         self._active_ids.discard(list_id)
 
+    def _apply_member_upserted(self, data: dict, list_id: str, payload: dict) -> None:
+        if payload.get("userId") != self.account_id:
+            return
+        role = payload.get("role")
+        if role is None:
+            self._pending_role_refresh = True
+            return
+        lst = data.get(list_id)
+        if lst is not None:
+            data[lst.id] = replace(lst, my_role=role)
+
 
 type _EventHandler = Callable[[ListAppCoordinator, dict, str, dict], None]
 
@@ -211,4 +239,5 @@ _EVENT_HANDLERS: dict[str, _EventHandler] = {
     "list.updated": ListAppCoordinator._apply_list_updated,
     "list.deleted": ListAppCoordinator._apply_list_deleted,
     "member.deleted": ListAppCoordinator._apply_member_deleted,
+    "member.upserted": ListAppCoordinator._apply_member_upserted,
 }

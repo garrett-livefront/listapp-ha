@@ -64,15 +64,26 @@ override both, and they're read when the integration module is imported. See the
   and move (sends the full order to `PUT /items/reorder`). Each write asks the coordinator for a
   debounced refresh.
 
-### Viewer lists can't be detected in advance
+### <a id="roles"></a>Viewer lists are read-only up front
 
-The settled decision is that viewer-role lists are read-only, but the API doesn't expose the
-caller's role. `ListResponse` has `ownerId` and `members` without roles, and
-`GET /lists/{id}/members` isn't on the OAuth allowlist. So every list advertises write features
-when the token allows writing, and a viewer's write is refused by the server with **404**. The API
-hides viewer lists as not found. The integration raises a `HomeAssistantError` saying the list may
-be view-only. To mark viewer lists read-only up front, the API needs to add the caller's role to
-`ListResponse`, and that's an API slice.
+`ListAppList.my_role` (`"OWNER" | "EDITOR" | "VIEWER" | None`) is the caller's own role, from
+`ListResponse.myRole` (listapp-api#106; `listapp-api` `docs/oauth.md#my-role`). `ListAppCoordinator.can_write_list`
+combines it with the global read-only option/scope: a `VIEWER` list gets `TodoListEntityFeature(0)`,
+same as global read-only, and `OWNER`/`EDITOR` behave as before.
+
+- **REST responses always set `my_role`** (`GET /lists/{id}` via `ListAppClient._parse_list`), so
+  every poll and refresh has the current value.
+- **`list.updated` never carries a role** (the event fans one payload out to every member — a role
+  baked in would be the publisher's, not the recipient's) and the coordinator's handler for it
+  never touches `my_role`, so a null there can't clear a role already known from REST.
+- **A role change arrives as `member.upserted` naming the account.** When the payload carries a
+  `role`, the coordinator updates it directly; when it doesn't, the coordinator schedules a
+  refresh instead of guessing.
+- **A missing `myRole` field** (an older server) parses as `None`, which `can_write_list` treats
+  like "unknown" — same as H2: the write is attempted and a 403/404 raises "may be view-only".
+- **`supported_features` updates on the next coordinator refresh with no reload.** `TodoListEntity`
+  re-reads it every time `CoordinatorEntity` writes new state, which HA already does on every
+  coordinator update — the same mechanism the global read-only option already relied on.
 
 ## Error mapping
 
@@ -163,8 +174,8 @@ envelope, not the bare payload:
   and `items.reordered` is `ReorderedItemsRef` `{items: [{id, position}]}`.
 - `AppJson` pretty-prints, so the envelope spans several `data:` lines. Ktor also writes `data:`
   before `event:` and ends lines with `\r\n`; the parser handles all three.
-- `list.updated` carries no `myRole` on this branch (listapp-api#106 adds it, null in events).
-  Nothing here reads it.
+- `list.updated`'s `myRole` is always null (listapp-api#106) — see [Roles](#roles) for why the
+  coordinator ignores it there instead of reading it.
 - `originUserId` is ignored: Home Assistant has no optimistic update to de-duplicate against.
 
 `tests/helpers.py` builds fixtures from those Kotlin field names and encodes frames the way Ktor
@@ -177,7 +188,7 @@ directly (safe: the payload carries everything the entity needs). `list.deleted`
 `member.deleted` naming the connected account, remove that list from `data` and from the coordinator's
 working selection (`_active_ids`), so the safety-net poll stops expecting it too — the todo platform's
 existing `sync_entities` listener does the rest (see "Lists appear and disappear" above).
-`member.upserted` carries no entity-visible change and is ignored.
+`member.upserted` naming the connected account updates `my_role` — see [Roles](#roles).
 
 **Batching.** Each valid event is queued and schedules `_flush_batch` via `hass.loop.call_later`
 if one isn't already pending (`STREAM_BURST_SECONDS` = 0.5s), so a burst lands as one

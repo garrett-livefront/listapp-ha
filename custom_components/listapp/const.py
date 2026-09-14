@@ -18,6 +18,8 @@ SCOPE_OFFLINE: Final = "offline_access"
 SCOPE_READ: Final = "lists:read"
 SCOPE_WRITE: Final = "lists:write"
 
+ROLE_VIEWER: Final = "VIEWER"
+
 CONF_READ_ONLY: Final = "read_only"
 CONF_SELECTED_LISTS: Final = "selected_lists"
 
