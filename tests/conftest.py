@@ -64,6 +64,9 @@ def register_lists(aioclient_mock: AiohttpClientMocker, lists: list[dict[str, An
     aioclient_mock.get(f"{API_BASE_URL}/lists", json=summaries)
     for lst in lists:
         aioclient_mock.get(f"{API_BASE_URL}/lists/{lst['id']}", json=lst)
+    # An immediate empty-body close: the stream reconnects in the background, but tests
+    # don't wait around for it. Individual stream tests register their own responses.
+    aioclient_mock.get(f"{API_BASE_URL}/me/events/selected", content=b"")
 
 
 @pytest.fixture

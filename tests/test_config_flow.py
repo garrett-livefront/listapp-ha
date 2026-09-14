@@ -11,13 +11,23 @@ from yarl import URL
 from custom_components.listapp.const import (
     API_BASE_URL,
     CONF_READ_ONLY,
+    CONF_SELECTED_LISTS,
     DOMAIN,
     OAUTH_AUTHORIZE_URL,
     OAUTH_CLIENT_ID,
     OAUTH_TOKEN_URL,
 )
 
-from .helpers import FULL_SCOPE, ME, OTHER_ACCOUNT_ID, READ_SCOPE
+from .conftest import register_lists
+from .helpers import (
+    FULL_SCOPE,
+    GROCERIES_ID,
+    ME,
+    OTHER_ACCOUNT_ID,
+    READ_SCOPE,
+    groceries,
+    list_payload,
+)
 
 REDIRECT_URI = "https://example.com/auth/external/callback"
 
@@ -47,12 +57,24 @@ async def _authorize(hass: HomeAssistant, hass_client_no_auth, result, aioclient
     return authorize_url.query["scope"]
 
 
-async def _finish(hass: HomeAssistant, flow_id: str):
+async def _finish(hass: HomeAssistant, flow_id: str, selected: list[str] | None = None):
+    with patch("custom_components.listapp.async_setup_entry", return_value=True):
+        result = await hass.config_entries.flow.async_configure(flow_id)
+        if result["type"] is FlowResultType.FORM and result["step_id"] == "select_lists":
+            result = await hass.config_entries.flow.async_configure(
+                flow_id,
+                {CONF_SELECTED_LISTS: selected if selected is not None else [GROCERIES_ID]},
+            )
+        return result
+
+
+async def _finish_to_picker(hass: HomeAssistant, flow_id: str):
     with patch("custom_components.listapp.async_setup_entry", return_value=True):
         return await hass.config_entries.flow.async_configure(flow_id)
 
 
 async def test_full_flow(hass: HomeAssistant, hass_client_no_auth, aioclient_mock) -> None:
+    register_lists(aioclient_mock, [groceries()])
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
 
     assert result["type"] is FlowResultType.EXTERNAL_STEP
@@ -63,17 +85,40 @@ async def test_full_flow(hass: HomeAssistant, hass_client_no_auth, aioclient_moc
     assert url.query["code_challenge"]
 
     scope = await _authorize(hass, hass_client_no_auth, result, aioclient_mock, {"json": ME})
-    result = await _finish(hass, result["flow_id"])
+    picker = await _finish_to_picker(hass, result["flow_id"])
+    assert picker["step_id"] == "select_lists"
+    validator = next(v for k, v in picker["data_schema"].schema.items() if k == CONF_SELECTED_LISTS)
+    assert validator.options == {GROCERIES_ID: "Groceries"}
+    with patch("custom_components.listapp.async_setup_entry", return_value=True):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_SELECTED_LISTS: [GROCERIES_ID]}
+        )
 
     assert scope == FULL_SCOPE
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "sam@example.com"
     assert result["result"].unique_id == ME["id"]
     assert result["result"].data["token"]["access_token"] == "new-access-token"
+    assert result["result"].options == {CONF_SELECTED_LISTS: [GROCERIES_ID]}
     token_request = aioclient_mock.mock_calls[0][2]
     assert token_request["client_id"] == OAUTH_CLIENT_ID
     assert "client_secret" not in token_request
     assert len(token_request["code_verifier"]) >= 43
+
+
+async def test_too_many_lists_rejected(
+    hass: HomeAssistant, hass_client_no_auth, aioclient_mock
+) -> None:
+    many = [list_payload(f"1f7b0000-0000-4000-8000-{i:012d}", f"List {i}", []) for i in range(30)]
+    register_lists(aioclient_mock, many)
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    await _authorize(hass, hass_client_no_auth, result, aioclient_mock, {"json": ME})
+    await _finish_to_picker(hass, result["flow_id"])
+
+    result = await _finish(hass, result["flow_id"], selected=[lst["id"] for lst in many])
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_SELECTED_LISTS: "too_many_lists"}
 
 
 async def test_duplicate_account_aborts(
@@ -162,10 +207,30 @@ async def test_options_read_only_toggle(
     assert result["type"] is FlowResultType.FORM
 
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_READ_ONLY: read_only}
+        result["flow_id"], {CONF_READ_ONLY: read_only, CONF_SELECTED_LISTS: [GROCERIES_ID]}
     )
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert setup_integration.options == {CONF_READ_ONLY: read_only}
+    assert setup_integration.options == {
+        CONF_READ_ONLY: read_only,
+        CONF_SELECTED_LISTS: [GROCERIES_ID],
+    }
     assert bool(_reauth_flows(hass)) is expect_reauth
+
+
+async def test_options_too_many_lists_rejected(
+    hass: HomeAssistant, setup_integration: MockConfigEntry, aioclient_mock
+) -> None:
+    many = [list_payload(f"1f7b0000-0000-4000-8000-{i:012d}", f"List {i}", []) for i in range(30)]
+    aioclient_mock.clear_requests()
+    register_lists(aioclient_mock, many)
+    result = await hass.config_entries.options.async_init(setup_integration.entry_id)
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {CONF_READ_ONLY: False, CONF_SELECTED_LISTS: [lst["id"] for lst in many]},
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_SELECTED_LISTS: "too_many_lists"}

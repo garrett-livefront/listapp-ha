@@ -24,7 +24,6 @@ from .helpers import (
     MILK_ID,
     READ_SCOPE,
     groceries,
-    list_payload,
     todo_entity_id,
 )
 
@@ -163,14 +162,18 @@ async def test_write_errors(
     assert bool(reauth) is (status == 401)
 
 
-async def test_lists_added_and_removed(
+async def test_list_removed_on_poll_404(
     hass: HomeAssistant,
     entity_id: str,
     aioclient_mock: AiohttpClientMocker,
     freezer: FrozenDateTimeFactory,
 ) -> None:
+    # A selected list can vanish between polls (deleted, or access revoked); the poll
+    # already skips 404s (test_list_gone_between_requests_is_skipped), and this is that
+    # same behavior for the safety-net poll, not the initial fetch.
     aioclient_mock.clear_requests()
-    register_lists(aioclient_mock, [list_payload(CHORES_ID, "Chores", [])])
+    aioclient_mock.get(f"{API_BASE_URL}/lists/{GROCERIES_ID}", status=404)
+    aioclient_mock.get(f"{API_BASE_URL}/me/events/selected", content=b"")
 
     freezer.tick(UPDATE_INTERVAL + timedelta(seconds=1))
     async_fire_time_changed(hass)
@@ -178,9 +181,6 @@ async def test_lists_added_and_removed(
 
     assert todo_entity_id(hass, GROCERIES_ID) is None
     assert hass.states.get(entity_id) is None
-    chores = todo_entity_id(hass, CHORES_ID)
-    assert chores is not None
-    assert hass.states.get(chores).state == "0"
 
 
 async def test_orphan_from_previous_run_is_removed(
@@ -207,6 +207,7 @@ async def test_list_gone_between_requests_is_skipped(
     aioclient_mock.get(f"{API_BASE_URL}/lists", json=summaries)
     aioclient_mock.get(f"{API_BASE_URL}/lists/{GROCERIES_ID}", json=groceries())
     aioclient_mock.get(f"{API_BASE_URL}/lists/{CHORES_ID}", status=404)
+    aioclient_mock.get(f"{API_BASE_URL}/me/events/selected", content=b"")
 
     config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(config_entry.entry_id)
