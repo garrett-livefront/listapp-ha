@@ -60,6 +60,7 @@ def _stream(
     on_auth_failed=None,
     on_selection_rejected=None,
     get_access_token=None,
+    get_list_ids=None,
 ) -> ListAppEventStream:
     async def token() -> str:
         return "test-token"
@@ -68,7 +69,7 @@ def _stream(
         session=async_get_clientsession(hass),
         get_access_token=get_access_token or token,
         base_url=API_BASE_URL,
-        list_ids=["a", "b"],
+        get_list_ids=get_list_ids or (lambda: ["a", "b"]),
         heartbeat_timeout=0.2,
         on_event=on_event or (lambda event: None),
         on_state_change=on_state_change or (lambda connected: None),
@@ -91,6 +92,28 @@ async def test_connect_success_delivers_events(
 
     assert events == [StreamEvent(event="item.deleted", data="{}")]
     assert states[0] is True
+    assert aioclient_mock.mock_calls[0][1].query["lists"] == "a,b"
+
+
+async def test_reconnect_uses_current_selection(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, monkeypatch
+) -> None:
+    from custom_components.listapp import stream as stream_module
+
+    aioclient_mock.get(STREAM_URL, content=b"")
+    monkeypatch.setattr(stream_module, "STREAM_BACKOFF_INITIAL_SECONDS", 0.01)
+    selection = ["a", "b"]
+    stream = _stream(hass, get_list_ids=lambda: list(selection))
+
+    stream.start()
+    await asyncio.sleep(0.005)
+    selection.remove("b")
+    await asyncio.sleep(0.1)
+    await stream.stop()
+
+    queries = [call[1].query["lists"] for call in aioclient_mock.mock_calls]
+    assert queries[0] == "a,b"
+    assert queries[-1] == "a"
 
 
 async def test_401_triggers_auth_failed(

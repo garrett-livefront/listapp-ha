@@ -92,7 +92,7 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
             session=async_get_clientsession(self.hass),
             get_access_token=self.client.async_get_access_token,
             base_url=self.client.base_url,
-            list_ids=sorted(self._active_ids),
+            get_list_ids=lambda: sorted(self._active_ids),
             heartbeat_timeout=STREAM_HEARTBEAT_TIMEOUT_SECONDS,
             on_event=self._handle_stream_event,
             on_state_change=self._handle_stream_state_change,
@@ -190,6 +190,8 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         data[lst.id] = replace(lst, title=title, owner_id=owner_id)
 
     def _apply_list_deleted(self, data: dict, list_id: str, payload: dict) -> None:
+        if payload["id"] != list_id:
+            raise ValueError("list.deleted names a different list")
         data.pop(list_id, None)
         self._active_ids.discard(list_id)
 

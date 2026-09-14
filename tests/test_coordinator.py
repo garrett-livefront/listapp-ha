@@ -197,11 +197,23 @@ async def test_malformed_frames_are_ignored(
     hass: HomeAssistant, setup_integration: MockConfigEntry
 ) -> None:
     coordinator = setup_integration.runtime_data
-    wrong_payload = list_change_event("member.deleted", GROCERIES_ID, [])  # type: ignore[arg-type]
-    for data in ("not json", "[]", json.dumps(deleted_ref(MILK_ID)), json.dumps(wrong_payload)):
-        coordinator._handle_stream_event(StreamEvent(event="item.deleted", data=data))
+    other_list = "1f7b0000-0000-4000-8000-0000000000ff"
+    frames = [
+        ("item.deleted", "not json"),
+        ("item.deleted", "[]"),
+        ("item.deleted", json.dumps(deleted_ref(MILK_ID))),
+        ("member.deleted", json.dumps(list_change_event("member.deleted", GROCERIES_ID, []))),
+        ("list.deleted", json.dumps(list_change_event("list.deleted", GROCERIES_ID, []))),
+        (
+            "list.deleted",
+            json.dumps(list_change_event("list.deleted", GROCERIES_ID, deleted_ref(other_list))),
+        ),
+    ]
+    for event_type, data in frames:
+        coordinator._handle_stream_event(StreamEvent(event=event_type, data=data))
     await asyncio.sleep(0.6)
     assert MILK_ID in {item.id for item in coordinator.data[GROCERIES_ID].items}
+    assert GROCERIES_ID in coordinator._active_ids
     assert coordinator._pending == []
 
 

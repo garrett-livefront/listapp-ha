@@ -72,7 +72,7 @@ class ListAppEventStream:
         session: ClientSession,
         get_access_token: Callable[[], Awaitable[str]],
         base_url: str,
-        list_ids: list[str],
+        get_list_ids: Callable[[], list[str]],
         heartbeat_timeout: float,
         on_event: Callable[[StreamEvent], None],
         on_state_change: Callable[[bool], None],
@@ -81,7 +81,8 @@ class ListAppEventStream:
     ) -> None:
         self._session = session
         self._get_access_token = get_access_token
-        self._url = f"{base_url}/me/events/selected?lists={','.join(list_ids)}"
+        self._base_url = base_url
+        self._get_list_ids = get_list_ids
         self._heartbeat_timeout = heartbeat_timeout
         self._on_event = on_event
         self._on_state_change = on_state_change
@@ -136,8 +137,10 @@ class ListAppEventStream:
         timeout = ClientTimeout(
             total=None, connect=REQUEST_TIMEOUT_SECONDS, sock_read=self._heartbeat_timeout
         )
+        # Read per connect, so a list removed mid-stream isn't resent on reconnect.
+        url = f"{self._base_url}/me/events/selected?lists={','.join(self._get_list_ids())}"
         async with self._session.get(
-            self._url,
+            url,
             headers={hdrs.AUTHORIZATION: f"Bearer {token}"},
             timeout=timeout,
         ) as response:

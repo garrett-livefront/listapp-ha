@@ -140,6 +140,10 @@ after the first refresh and cancelled via `entry.async_on_unload` — covers bot
   called fresh before every (re)connect attempt. A refused refresh (`ListAppAuthError`) is a 401;
   any other refresh failure retries with backoff, so a token-endpoint outage never starts reauth.
   Tokens never appear in a log line.
+- **The `lists=` query is rebuilt on every (re)connect** from the coordinator's current
+  `_active_ids`, not fixed at construction. A list dropped mid-stream (deleted, revoked, 404) would
+  otherwise be resent on reconnect, and the server's `400` for it stops the stream for every other
+  list until a reload. (Copilot review comment on PR #4, round 3.)
 - **Connect timeout** is `REQUEST_TIMEOUT_SECONDS`, separate from the read timeout, so a stalled
   DNS lookup or TCP connect enters backoff instead of hanging the task.
 
