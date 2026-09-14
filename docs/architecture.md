@@ -40,9 +40,11 @@ OAuth2 authorization code with **PKCE**, against Ory Hydra, through HA's
 
 ## <a id="endpoints"></a>Endpoints
 
-`const.py` holds `API_BASE_URL` and `OAUTH_BASE_URL`. **Production hosts are not decided**, so
-`OAUTH_BASE_URL` (`https://auth.listapp.radhangs.com`) is a placeholder that follows the example in
-`listapp-api/docs/oauth.md`.
+`const.py` holds `API_BASE_URL` and `OAUTH_BASE_URL`. Production hosts (decision D9, 2026-09-14):
+`API_BASE_URL` is `https://listapp.radhangs.com/api/v1`; `OAUTH_BASE_URL` is
+`https://listapp.radhangs.com/ha`, with the reverse proxy stripping `/ha` before it reaches Hydra
+(so the authorize/token URLs are `.../ha/oauth2/auth` and `.../ha/oauth2/token`). See the plan:
+https://forge.radhangs.com/listapp-ha-integration-plan-b2h9rr/
 
 There's deliberately no user-facing URL field: this integration talks to one service. For local
 development, the environment variables `LISTAPP_API_BASE_URL` and `LISTAPP_OAUTH_BASE_URL`
