@@ -57,7 +57,8 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         self._pending: list[tuple[_EventHandler, str, dict]] = []
         self._batch_handle: asyncio.TimerHandle | None = None
         self._pending_role_refresh = False
-        self._role_overrides: dict[str, str] = {}
+        self._role_overrides: dict[str, tuple[str, int]] = {}
+        self._poll_start_count = 0
 
     @property
     def account_id(self) -> str:
@@ -91,6 +92,8 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
             return None
 
     async def _async_update_data(self) -> dict[str, ListAppList]:
+        poll_count = self._poll_start_count
+        self._poll_start_count += 1
         try:
             lists = await asyncio.gather(
                 *(self._async_fetch_list(list_id) for list_id in list(self._active_ids))
@@ -102,15 +105,17 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         # Re-checked: a stream removal can land while the requests are in flight.
         result = {lst.id: lst for lst in lists if lst is not None and lst.id in self._active_ids}
         # A poll started before a member.upserted demotion can finish after it and carry a
-        # stale role. Reapply any not-yet-confirmed override so it can't revert the demotion —
-        # see docs/architecture.md#roles.
-        for list_id, role in list(self._role_overrides.items()):
-            lst = result.get(list_id)
-            if lst is None:
-                continue
-            if lst.my_role == role:
+        # stale role. Reapply the override only onto polls that were already in flight when the
+        # event landed (`poll_count` below its recorded generation) — any poll that *started*
+        # after the event reflects the server's current state and wins outright, so a later,
+        # unrelated role change can still recover even if the event that would have cleared the
+        # override was missed. See docs/architecture.md#roles.
+        for list_id, (role, event_generation) in list(self._role_overrides.items()):
+            if poll_count >= event_generation:
                 del self._role_overrides[list_id]
-            else:
+                continue
+            lst = result.get(list_id)
+            if lst is not None:
                 result[list_id] = replace(lst, my_role=role)
         return result
 
@@ -236,16 +241,17 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
     def _apply_member_upserted(self, data: dict, list_id: str, payload: dict) -> None:
         if payload.get("userId") != self.account_id:
             return
+        lst = data.get(list_id)
+        if lst is None:
+            return
         role = payload.get("role")
         if role is None:
             self._pending_role_refresh = True
             return
         # Recorded so a poll already in flight can't overwrite this with a stale role — see
         # _async_update_data and docs/architecture.md#roles.
-        self._role_overrides[list_id] = role
-        lst = data.get(list_id)
-        if lst is not None:
-            data[lst.id] = replace(lst, my_role=role)
+        self._role_overrides[list_id] = (role, self._poll_start_count)
+        data[lst.id] = replace(lst, my_role=role)
 
 
 type _EventHandler = Callable[[ListAppCoordinator, dict, str, dict], None]

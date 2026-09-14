@@ -79,10 +79,12 @@ same as global read-only, and `OWNER`/`EDITOR` behave as before.
 - **A role change arrives as `member.upserted` naming the account.** When the payload carries a
   `role`, the coordinator updates it directly; when it doesn't, the coordinator schedules a
   refresh instead of guessing.
-- **A poll already in flight when a demotion lands can't revert it.** The direct update also
-  records the role in `_role_overrides`; `_async_update_data` reapplies any pending override onto
-  its own (possibly stale) result, and only drops it once a poll actually reports that role back.
-  (Copilot review comment on PR #5.)
+- **A poll already in flight when a demotion lands can't revert it, but a later poll can still
+  recover from a missed event.** The direct update records the role in `_role_overrides` along
+  with a poll generation counter; `_async_update_data` reapplies the override only onto polls that
+  had already started before the event landed. Any poll that *starts* afterward is trusted
+  outright, override cleared, even if it disagrees — so the override can't get stuck forever
+  contradicting a role change whose event never arrived. (Copilot review comments on PR #5.)
 - **A missing `myRole` field** (an older server) parses as `None`, which `can_write_list` treats
   like "unknown" — same as H2: the write is attempted and a 403/404 raises "may be view-only".
 - **`supported_features` updates on the next coordinator refresh with no reload.** `TodoListEntity`
