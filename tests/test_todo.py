@@ -181,6 +181,7 @@ async def test_list_removed_on_poll_404(
 
     assert todo_entity_id(hass, GROCERIES_ID) is None
     assert hass.states.get(entity_id) is None
+    assert GROCERIES_ID not in hass.config_entries.async_entries(DOMAIN)[0].runtime_data._active_ids
 
 
 async def test_orphan_from_previous_run_is_removed(

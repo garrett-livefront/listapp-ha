@@ -150,6 +150,22 @@ async def test_profile_errors_abort(
 
 
 @pytest.mark.parametrize(
+    ("status", "reason"), [(401, "oauth_unauthorized"), (503, "cannot_connect")]
+)
+async def test_list_fetch_errors_abort(
+    hass: HomeAssistant, hass_client_no_auth, aioclient_mock, status: int, reason: str
+) -> None:
+    aioclient_mock.get(f"{API_BASE_URL}/lists", status=status)
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    await _authorize(hass, hass_client_no_auth, result, aioclient_mock, {"json": ME})
+
+    result = await _finish(hass, result["flow_id"])
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == reason
+
+
+@pytest.mark.parametrize(
     ("options", "expected_scope"),
     [({}, FULL_SCOPE), ({CONF_READ_ONLY: True}, READ_SCOPE)],
 )
@@ -234,3 +250,41 @@ async def test_options_too_many_lists_rejected(
 
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {CONF_SELECTED_LISTS: "too_many_lists"}
+
+
+async def test_options_keep_selection_when_lists_unavailable(
+    hass: HomeAssistant, setup_integration: MockConfigEntry, aioclient_mock
+) -> None:
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{API_BASE_URL}/lists", status=503)
+    result = await hass.config_entries.options.async_init(setup_integration.entry_id)
+    assert CONF_SELECTED_LISTS not in result["data_schema"].schema
+
+    with patch("custom_components.listapp.async_setup_entry", return_value=True):
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {CONF_READ_ONLY: False}
+        )
+        await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert setup_integration.options == {
+        CONF_READ_ONLY: False,
+        CONF_SELECTED_LISTS: [GROCERIES_ID],
+    }
+
+
+@pytest.mark.parametrize("options", [{}, {CONF_SELECTED_LISTS: [GROCERIES_ID]}])
+async def test_options_on_unloaded_entry(
+    hass: HomeAssistant, config_entry: MockConfigEntry, options: dict
+) -> None:
+    config_entry.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+    assert CONF_SELECTED_LISTS not in result["data_schema"].schema
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_READ_ONLY: False}
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert config_entry.options == {CONF_READ_ONLY: False, **options}

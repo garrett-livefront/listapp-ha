@@ -4,6 +4,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
+from custom_components.listapp.api import ListAppAuthError, ListAppUnavailableError
 from custom_components.listapp.const import API_BASE_URL
 from custom_components.listapp.stream import ListAppEventStream, StreamEvent, parse_sse
 
@@ -53,13 +54,14 @@ def _stream(
     on_state_change=None,
     on_auth_failed=None,
     on_selection_rejected=None,
+    get_access_token=None,
 ) -> ListAppEventStream:
     async def token() -> str:
         return "test-token"
 
     return ListAppEventStream(
         session=async_get_clientsession(hass),
-        get_access_token=token,
+        get_access_token=get_access_token or token,
         base_url=API_BASE_URL,
         list_ids=["a", "b"],
         heartbeat_timeout=0.2,
@@ -164,6 +166,44 @@ async def test_backoff_grows_while_never_connecting(
     await stream.stop()
 
     assert jitter_bounds[:3] == [0.0025, 0.005, 0.01]
+
+
+async def test_token_refresh_auth_error_triggers_reauth(hass: HomeAssistant) -> None:
+    async def refused() -> str:
+        raise ListAppAuthError("refresh token refused")
+
+    called = asyncio.Event()
+    stream = _stream(hass, on_auth_failed=called.set, get_access_token=refused)
+
+    stream.start()
+    await asyncio.wait_for(called.wait(), timeout=1)
+    await stream.stop()
+
+
+async def test_token_refresh_outage_retries_without_reauth(
+    hass: HomeAssistant, monkeypatch
+) -> None:
+    from custom_components.listapp import stream as stream_module
+
+    monkeypatch.setattr(stream_module, "STREAM_BACKOFF_INITIAL_SECONDS", 0.005)
+    attempts: list[int] = []
+
+    async def unavailable() -> str:
+        attempts.append(1)
+        raise ListAppUnavailableError("token endpoint down")
+
+    auth_failed: list[int] = []
+    stream = _stream(
+        hass, on_auth_failed=lambda: auth_failed.append(1), get_access_token=unavailable
+    )
+
+    stream.start()
+    await asyncio.sleep(0.1)
+    assert stream._task is not None and not stream._task.done()
+    await stream.stop()
+
+    assert len(attempts) >= 2
+    assert not auth_failed
 
 
 async def test_stop_cancels_task(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> None:

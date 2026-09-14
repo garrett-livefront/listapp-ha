@@ -1,5 +1,6 @@
 import asyncio
 import json
+from dataclasses import replace
 
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -173,28 +174,50 @@ async def test_unknown_event_type_ignored(
     coordinator = setup_integration.runtime_data
     coordinator._handle_stream_event(StreamEvent(event="member.upserted", data="{}"))
     await asyncio.sleep(0.6)
-    assert coordinator._pending is None
+    assert coordinator._pending == []
 
 
 async def test_malformed_frames_are_ignored(
     hass: HomeAssistant, setup_integration: MockConfigEntry
 ) -> None:
     coordinator = setup_integration.runtime_data
-    for data in ("not json", "[]", json.dumps(deleted_ref(MILK_ID))):
+    wrong_payload = list_change_event("member.deleted", GROCERIES_ID, [])  # type: ignore[arg-type]
+    for data in ("not json", "[]", json.dumps(deleted_ref(MILK_ID)), json.dumps(wrong_payload)):
         coordinator._handle_stream_event(StreamEvent(event="item.deleted", data=data))
     await asyncio.sleep(0.6)
     assert MILK_ID in {item.id for item in coordinator.data[GROCERIES_ID].items}
+    assert coordinator._pending == []
 
 
-async def test_stream_state_change_switches_poll_interval(
+async def test_batch_replays_onto_data_from_a_poll_mid_batch(
     hass: HomeAssistant, setup_integration: MockConfigEntry
 ) -> None:
     coordinator = setup_integration.runtime_data
+    await _emit(coordinator, "item.deleted", GROCERIES_ID, deleted_ref(MILK_ID))
+    polled = replace(coordinator.data[GROCERIES_ID], title="Renamed by poll")
+    coordinator.async_set_updated_data({GROCERIES_ID: polled})
+    await asyncio.sleep(0.6)
+
+    lst = coordinator.data[GROCERIES_ID]
+    assert lst.title == "Renamed by poll"
+    assert MILK_ID not in {item.id for item in lst.items}
+
+
+async def test_stream_state_change_switches_and_reschedules_poll(
+    hass: HomeAssistant, setup_integration: MockConfigEntry, monkeypatch
+) -> None:
+    coordinator = setup_integration.runtime_data
+    coordinator._handle_stream_state_change(False)
+    reschedules = []
+    monkeypatch.setattr(coordinator, "_schedule_refresh", lambda: reschedules.append(1))
+
     coordinator._handle_stream_state_change(True)
     assert coordinator.update_interval == POLL_INTERVAL_STREAMING
-
+    coordinator._handle_stream_state_change(True)
     coordinator._handle_stream_state_change(False)
     assert coordinator.update_interval == POLL_INTERVAL_FALLBACK
+
+    assert len(reschedules) == 2
 
 
 async def test_unload_cancels_stream_task(

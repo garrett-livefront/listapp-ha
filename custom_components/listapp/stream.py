@@ -10,7 +10,12 @@ from http import HTTPStatus
 
 from aiohttp import ClientError, ClientSession, ClientTimeout, StreamReader, hdrs
 
-from .const import STREAM_BACKOFF_INITIAL_SECONDS, STREAM_BACKOFF_MAX_SECONDS
+from .api import ListAppAuthError, ListAppError
+from .const import (
+    REQUEST_TIMEOUT_SECONDS,
+    STREAM_BACKOFF_INITIAL_SECONDS,
+    STREAM_BACKOFF_MAX_SECONDS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -121,8 +126,15 @@ class ListAppEventStream:
             backoff = min(backoff * 2, STREAM_BACKOFF_MAX_SECONDS)
 
     async def _connect_and_read(self) -> None:
-        token = await self._get_access_token()
-        timeout = ClientTimeout(total=None, sock_read=self._heartbeat_timeout)
+        try:
+            token = await self._get_access_token()
+        except ListAppAuthError as err:
+            raise _AuthFailed from err
+        except ListAppError as err:
+            raise _Retryable(str(err)) from err
+        timeout = ClientTimeout(
+            total=None, connect=REQUEST_TIMEOUT_SECONDS, sock_read=self._heartbeat_timeout
+        )
         async with self._session.get(
             self._url,
             headers={hdrs.AUTHORIZATION: f"Bearer {token}"},

@@ -50,15 +50,16 @@ override both, and they're read when the integration module is imported. See the
 
 ## Entities
 
-- **One `todo` entity per list** the account can reach (`GET /lists`), each filled from
+- **One `todo` entity per selected list** (see [List picker](#list-picker)), each filled from
   `GET /lists/{id}`. `unique_id` is `<account id>_<list id>`, so the same shared list linked through
   two accounts gives two distinct entities.
 - **One service device per account**, named "ListApp", so entity IDs come out as
   `todo.listapp_<list title>`. The entry title is the account email, to tell entries apart.
-- **Lists appear and disappear with polling.** New list IDs add entities. Vanished ones are removed
-  from the entity registry, so there are no orphaned `unavailable` entities left behind — including
-  lists deleted while Home Assistant was stopped, which the first refresh reconciles. A list
-  deleted between the two requests is skipped rather than failing the whole refresh.
+- **Lists disappear, but never appear, on their own.** A selected list that is deleted or whose
+  access is revoked (a 404 on poll, or `list.deleted`/`member.deleted` on the stream) is dropped
+  from the selection and its entity removed from the registry, so there are no orphaned
+  `unavailable` entities, including lists deleted while Home Assistant was stopped. A newly shared
+  list only appears once it's picked in the options flow.
 - **Writes:** create (appended at `max(position) + 1`), update (rename, check, uncheck), delete,
   and move (sends the full order to `PUT /items/reorder`). Each write asks the coordinator for a
   debounced refresh.
@@ -94,13 +95,22 @@ calls with a `ServiceValidationError` before any request is made.
 H2 polled every 60 seconds for every list the account could reach. H3 replaces discovery-by-poll
 with a user-chosen selection and live updates over one SSE connection; `iot_class` is `cloud_push`.
 
-### List picker
+### <a id="list-picker"></a>List picker
 
 Entities exist only for lists the user selects, at setup (`config_flow.py`'s `select_lists` step,
 after linking the account) and in the options flow (added to the existing `init` step, alongside
 read-only mode). Both share `_lists_schema()`, a `cv.multi_select` built from `GET /lists`, capped
 at 25 (`MAX_SELECTED_LISTS`) — server-enforced too (`listapp-api` `docs/realtime-updates.md#ha-item-stream`).
 Exceeding it re-shows the form with a `too_many_lists` error rather than truncating silently.
+
+- **At setup, a failed `GET /lists` aborts** (`oauth_unauthorized` for a 401, `cannot_connect`
+  otherwise). Creating the entry with an empty selection would stick, because the H2 migration only
+  runs for entries with no selection at all.
+- **In the options flow, the picker is optional.** When the entry isn't loaded (setup retry or
+  error, so there's no client) or `GET /lists` fails, the form shows only read-only mode and
+  submitting it keeps the stored selection. Read-only mode stays changeable during an outage, and
+  an empty option set can't wipe or invalidate the selection. The default also drops stored ids
+  that `GET /lists` no longer returns. (Copilot review comments on PR #4.)
 
 **H2 migration.** An H2-era entry has no `CONF_SELECTED_LISTS` option. `__init__.py`'s
 `_async_migrate_selection` runs once per entry, on the first H3 setup: if the option is absent, it
@@ -127,7 +137,11 @@ after the first refresh and cancelled via `entry.async_on_unload` — covers bot
   exponential backoff with jitter, capped at `STREAM_BACKOFF_MAX_SECONDS` (60s), resetting to
   `STREAM_BACKOFF_INITIAL_SECONDS` (1s) after any successful connection.
 - The access token is refreshed via the same `OAuth2Session`-backed closure the REST client uses,
-  called fresh before every (re)connect attempt. Tokens never appear in a log line.
+  called fresh before every (re)connect attempt. A refused refresh (`ListAppAuthError`) is a 401;
+  any other refresh failure retries with backoff, so a token-endpoint outage never starts reauth.
+  Tokens never appear in a log line.
+- **Connect timeout** is `REQUEST_TIMEOUT_SECONDS`, separate from the read timeout, so a stalled
+  DNS lookup or TCP connect enters backoff instead of hanging the task.
 
 ### <a id="event-frames"></a>Event frames
 
@@ -161,15 +175,20 @@ working selection (`_active_ids`), so the safety-net poll stops expecting it too
 existing `sync_entities` listener does the rest (see "Lists appear and disappear" above).
 `member.upserted` carries no entity-visible change and is ignored.
 
-**Batching.** Each applied event schedules `_flush_batch` via `hass.loop.call_later` if one isn't
-already pending (`STREAM_BURST_SECONDS` = 0.5s); the debounce collects into a single mutable
-`_pending` dict so a burst of events lands as one `async_set_updated_data` call, not one per event.
+**Batching.** Each valid event is queued and schedules `_flush_batch` via `hass.loop.call_later`
+if one isn't already pending (`STREAM_BURST_SECONDS` = 0.5s), so a burst lands as one
+`async_set_updated_data` call. The queue holds the events, not a snapshot of the data: the flush
+replays them onto whatever `data` is current, so a safety-net poll finishing mid-batch isn't
+overwritten by a stale copy. Each event is also trial-applied to a scratch copy when it arrives,
+so a malformed payload is dropped then and can't fail the flush. (Copilot review comment on PR #4.)
 
 ### Safety-net poll
 
 `update_interval` switches with the stream's connection state: `POLL_INTERVAL_STREAMING` (15
 minutes) while connected, `POLL_INTERVAL_FALLBACK` (60 seconds, H2's old interval) whenever it
-isn't — including while backing off, and permanently for a `400`-rejected selection. The poll only
+isn't — including while backing off, and permanently for a `400`-rejected selection. Setting
+`update_interval` alone doesn't move a refresh HA has already scheduled, so a change also calls
+`_schedule_refresh()`; without it, a dropped stream could wait out the rest of a 15-minute timer. The poll only
 ever re-fetches `_active_ids`, never rediscovers new lists; picking up newly-shared lists is a
 picker/options-flow action, not something polling or the stream does automatically (`docs` for the
 server route: newly-shared lists are deliberately not added mid-stream either).

@@ -86,8 +86,10 @@ class ListAppFlowHandler(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, dom
         self._entry_title = me["email"]
         try:
             self._available_lists = await client.async_get_lists()
+        except ListAppAuthError:
+            return self.async_abort(reason="oauth_unauthorized")
         except ListAppError:
-            self._available_lists = []
+            return self.async_abort(reason="cannot_connect")
         return await self.async_step_select_lists()
 
     async def async_step_select_lists(
@@ -116,26 +118,42 @@ class ListAppFlowHandler(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, dom
 class ListAppOptionsFlow(OptionsFlowWithReload):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
+        current = self.config_entry.options
         if user_input is not None:
-            selected = user_input[CONF_SELECTED_LISTS]
-            if len(selected) > MAX_SELECTED_LISTS:
+            selected = user_input.get(CONF_SELECTED_LISTS)
+            if selected is not None and len(selected) > MAX_SELECTED_LISTS:
                 errors[CONF_SELECTED_LISTS] = "too_many_lists"
+            elif selected is None and CONF_SELECTED_LISTS in current:
+                # No picker shown: keep the selection — see docs/architecture.md#list-picker
+                return self.async_create_entry(
+                    data={**user_input, CONF_SELECTED_LISTS: current[CONF_SELECTED_LISTS]}
+                )
             else:
                 return self.async_create_entry(data=user_input)
 
-        coordinator = self.config_entry.runtime_data
-        try:
-            available = await coordinator.client.async_get_lists()
-        except ListAppError:
-            available = []
-        default = self.config_entry.options.get(
-            CONF_SELECTED_LISTS, [lst["id"] for lst in available[:MAX_SELECTED_LISTS]]
-        )
-        schema = vol.Schema({vol.Required(CONF_READ_ONLY, default=False): bool}).extend(
-            _lists_schema(available, default).schema
-        )
+        schema = vol.Schema({vol.Required(CONF_READ_ONLY, default=False): bool})
+        available = await self._async_available_lists()
+        if available is not None:
+            ids = {lst["id"] for lst in available}
+            default = [
+                list_id
+                for list_id in current.get(
+                    CONF_SELECTED_LISTS, [lst["id"] for lst in available[:MAX_SELECTED_LISTS]]
+                )
+                if list_id in ids
+            ]
+            schema = schema.extend(_lists_schema(available, default).schema)
         return self.async_show_form(
             step_id="init",
             data_schema=self.add_suggested_values_to_schema(schema, self.config_entry.options),
             errors=errors,
         )
+
+    async def _async_available_lists(self) -> list[dict[str, Any]] | None:
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            return None
+        try:
+            return await coordinator.client.async_get_lists()
+        except ListAppError:
+            return None
