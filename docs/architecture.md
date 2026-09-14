@@ -91,7 +91,79 @@ calls with a `ServiceValidationError` before any request is made.
 
 ## What H3 adds
 
-H2 polls every 60 seconds (`UPDATE_INTERVAL`). H3 replaces that with live updates. It adds a list
-picker at setup, one account SSE stream for the selected lists (`/me/events` with item events),
-about 0.5 s of batching before entity updates, a catch-up sync after reconnects, and a slow
-safety-net poll. `iot_class` goes back to `cloud_push` then.
+H2 polled every 60 seconds for every list the account could reach. H3 replaces discovery-by-poll
+with a user-chosen selection and live updates over one SSE connection; `iot_class` is `cloud_push`.
+
+### List picker
+
+Entities exist only for lists the user selects, at setup (`config_flow.py`'s `select_lists` step,
+after linking the account) and in the options flow (added to the existing `init` step, alongside
+read-only mode). Both share `_lists_schema()`, a `cv.multi_select` built from `GET /lists`, capped
+at 25 (`MAX_SELECTED_LISTS`) — server-enforced too (`listapp-api` `docs/realtime-updates.md#ha-item-stream`).
+Exceeding it re-shows the form with a `too_many_lists` error rather than truncating silently.
+
+**H2 migration.** An H2-era entry has no `CONF_SELECTED_LISTS` option. `__init__.py`'s
+`_async_migrate_selection` runs once per entry, on the first H3 setup: if the option is absent, it
+fetches `GET /lists` and writes the first 25 ids as the selection via
+`hass.config_entries.async_update_entry`, so the entry looks exactly like a freshly-created H3 entry
+from then on and the migration never runs again for it.
+
+### Stream client (`stream.py`)
+
+One `aiohttp` SSE reader per config entry (`ListAppEventStream`), started in `async_setup_entry`
+after the first refresh and cancelled via `entry.async_on_unload` — covers both unload and reload.
+
+- **Parsing** (`parse_sse`) follows the SSE field rules: `data:` lines join with `\n` before
+  dispatch, `event:` sets the type for that one event (default `message`), lines starting with `:`
+  are comments (including the server's `: heartbeat` frames) and are skipped, and a blank line
+  dispatches.
+- **Heartbeat timeout** is `aiohttp.ClientTimeout(sock_read=...)` at 2.5x the server's 25s
+  heartbeat period, not a manual watchdog — aiohttp already raises `TimeoutError` when no bytes
+  arrive in that window, which is indistinguishable from a dead connection for our purposes.
+- **401** → `on_auth_failed`, wired to `config_entry.async_start_reauth`. **400** (malformed/too-many
+  selection — shouldn't happen given the picker's own cap, but the server is the source of truth) →
+  `on_selection_rejected`, logged once, and the loop stops retrying so a broken selection doesn't
+  spin. Everything else retryable (503, network errors, a clean close, the heartbeat timeout) →
+  exponential backoff with jitter, capped at `STREAM_BACKOFF_MAX_SECONDS` (60s), resetting to
+  `STREAM_BACKOFF_INITIAL_SECONDS` (1s) after any successful connection.
+- The access token is refreshed via the same `OAuth2Session`-backed closure the REST client uses,
+  called fresh before every (re)connect attempt. Tokens never appear in a log line.
+
+### Applying events (`coordinator.py`)
+
+`item.upserted`/`item.deleted`/`items.reordered` and `list.updated` mutate the coordinator's data
+directly (safe: the payload carries everything the entity needs). `list.deleted`, and
+`member.deleted` naming the connected account, remove that list from `data` and from the coordinator's
+working selection (`_active_ids`), so the safety-net poll stops expecting it too — the todo platform's
+existing `sync_entities` listener does the rest (see "Lists appear and disappear" above).
+`member.upserted` carries no entity-visible change and is ignored.
+
+**Batching.** Each applied event schedules `_flush_batch` via `hass.loop.call_later` if one isn't
+already pending (`STREAM_BURST_SECONDS` = 0.5s); the debounce collects into a single mutable
+`_pending` dict so a burst of events lands as one `async_set_updated_data` call, not one per event.
+
+### Safety-net poll
+
+`update_interval` switches with the stream's connection state: `POLL_INTERVAL_STREAMING` (15
+minutes) while connected, `POLL_INTERVAL_FALLBACK` (60 seconds, H2's old interval) whenever it
+isn't — including while backing off, and permanently for a `400`-rejected selection. The poll only
+ever re-fetches `_active_ids`, never rediscovers new lists; picking up newly-shared lists is a
+picker/options-flow action, not something polling or the stream does automatically (`docs` for the
+server route: newly-shared lists are deliberately not added mid-stream either).
+
+## Review outcomes from PR #3 (H2)
+
+Recorded here since they're answered questions worth not re-litigating:
+
+- **`translations/en.json`, no `strings.json`.** Custom integrations ship translated strings
+  directly; `strings.json` is the source file HA core integrations generate translations *from*, and
+  `hassfest` doesn't require it for a custom component.
+- **`todo.update_item` and unchecking.** HA's todo entity platform fills in the item's current
+  status before calling the integration's `async_update_todo_item` when a service call only supplies
+  a rename, so renaming an item never unchecks it as a side effect.
+- **Token refresh and `scope`.** HA's OAuth2 implementation merges a refreshed token into the stored
+  one rather than replacing it, so a refresh response that omits `scope` (some issuers do) doesn't
+  lose it — the previously granted scope survives.
+- **Entity-registry removal unloads the live entity.** Calling `registry.async_remove` on an entity
+  backed by a currently-loaded platform also removes it from the running entity platform, not just
+  the registry — `sync_entities` doesn't need to also touch the live entity itself.
