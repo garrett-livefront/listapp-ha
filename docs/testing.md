@@ -3,7 +3,7 @@
 ## Running locally
 
 ```
-python3.13 -m venv .venv
+python3.14 -m venv .venv
 .venv/bin/pip install -r requirements_test.txt
 .venv/bin/pytest
 .venv/bin/ruff check .
