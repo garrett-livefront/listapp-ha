@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 from homeassistant.components.todo import DOMAIN as TODO_DOMAIN
@@ -46,6 +47,41 @@ def list_payload(list_id: str, title: str, items: list[dict[str, Any]]) -> dict:
         "members": [],
         "items": items,
     }
+
+
+# Server event shapes, keyed exactly as listapp-api serializes them (hacs-integration):
+# ListChangeEvent/DeletedRef/MemberDeletedRef/ReorderedItemsRef in services/ListEventBus.kt,
+# ReorderItem in models/dto/ListItemDto.kt. AppJson has no naming strategy and prettyPrint on.
+LIST_CHANGE_EVENT_FIELDS = ("listId", "type", "payload", "originUserId", "updatedAt")
+
+
+def list_change_event(event_type: str, list_id: str, payload: dict) -> dict:
+    return {
+        "listId": list_id,
+        "type": event_type,
+        "payload": payload,
+        "originUserId": OTHER_ACCOUNT_ID,
+        "updatedAt": "2026-09-01T00:00:00Z",
+    }
+
+
+def deleted_ref(ref_id: str) -> dict:
+    return {"id": ref_id}
+
+
+def member_deleted_ref(member_id: str, user_id: str | None) -> dict:
+    return {"id": member_id, "userId": user_id}
+
+
+def reordered_items_ref(positions: list[tuple[str, int]]) -> dict:
+    return {"items": [{"id": item_id, "position": position} for item_id, position in positions]}
+
+
+def ktor_sse_frame(event_type: str, list_id: str, payload: dict) -> bytes:
+    """Encode a frame the way Ktor's ServerSentEvent.toString does: data first, split per line."""
+    data = json.dumps(list_change_event(event_type, list_id, payload), indent=4)
+    lines = [f"data: {line}\r\n" for line in data.split("\n")]
+    return ("".join(lines) + f"event: {event_type}\r\n\r\n").encode()
 
 
 def groceries() -> dict:

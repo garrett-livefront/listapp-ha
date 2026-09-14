@@ -120,12 +120,13 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         handler = _EVENT_HANDLERS.get(event.event)
         if handler is None:
             return
+        # Frames are a ListChangeEvent envelope — see docs/architecture.md#event-frames
         try:
-            payload = json.loads(event.data)
-        except ValueError:
-            _LOGGER.debug("Ignoring unparsable ListApp %s event", event.event)
+            envelope = json.loads(event.data)
+            handler(self, envelope["listId"], envelope["payload"])
+        except (ValueError, KeyError, TypeError):
+            _LOGGER.debug("Ignoring malformed ListApp %s event", event.event)
             return
-        handler(self, payload)
         self._schedule_batch()
 
     def _schedule_batch(self) -> None:
@@ -139,36 +140,37 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
             data, self._pending = self._pending, None
             self.async_set_updated_data(data)
 
-    def _apply_item_upserted(self, payload: dict) -> None:
-        data = self._pending_data()
-        lst = data.get(payload["listId"])
-        if lst is None:
-            return
+    def _apply_item_upserted(self, list_id: str, payload: dict) -> None:
         item = ListAppItem(
             id=payload["id"],
             content=payload["content"],
             is_checked=payload["isChecked"],
             position=payload["position"],
         )
+        data = self._pending_data()
+        lst = data.get(list_id)
+        if lst is None:
+            return
         items = [existing for existing in lst.items if existing.id != item.id]
         items.append(item)
         items.sort(key=lambda existing: existing.position)
         data[lst.id] = replace(lst, items=items)
 
-    def _apply_item_deleted(self, payload: dict) -> None:
+    def _apply_item_deleted(self, list_id: str, payload: dict) -> None:
+        item_id = payload["id"]
         data = self._pending_data()
-        lst = data.get(payload["listId"])
+        lst = data.get(list_id)
         if lst is None:
             return
-        items = [existing for existing in lst.items if existing.id != payload["id"]]
+        items = [existing for existing in lst.items if existing.id != item_id]
         data[lst.id] = replace(lst, items=items)
 
-    def _apply_items_reordered(self, payload: dict) -> None:
+    def _apply_items_reordered(self, list_id: str, payload: dict) -> None:
+        positions = {entry["id"]: entry["position"] for entry in payload["items"]}
         data = self._pending_data()
-        lst = data.get(payload["listId"])
+        lst = data.get(list_id)
         if lst is None:
             return
-        positions = {entry["id"]: entry["position"] for entry in payload["items"]}
         items = [
             replace(existing, position=positions.get(existing.id, existing.position))
             for existing in lst.items
@@ -176,27 +178,28 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         items.sort(key=lambda existing: existing.position)
         data[lst.id] = replace(lst, items=items)
 
-    def _apply_list_updated(self, payload: dict) -> None:
+    def _apply_list_updated(self, list_id: str, payload: dict) -> None:
+        title, owner_id = payload["title"], payload["ownerId"]
         data = self._pending_data()
-        lst = data.get(payload["id"])
+        lst = data.get(list_id)
         if lst is None:
             return
-        data[lst.id] = replace(lst, title=payload["title"], owner_id=payload["ownerId"])
+        data[lst.id] = replace(lst, title=title, owner_id=owner_id)
 
-    def _apply_list_deleted(self, payload: dict) -> None:
+    def _apply_list_deleted(self, list_id: str, payload: dict) -> None:
         data = self._pending_data()
-        data.pop(payload["id"], None)
-        self._active_ids.discard(payload["id"])
+        data.pop(list_id, None)
+        self._active_ids.discard(list_id)
 
-    def _apply_member_deleted(self, payload: dict) -> None:
+    def _apply_member_deleted(self, list_id: str, payload: dict) -> None:
         if payload.get("userId") != self.account_id:
             return
         data = self._pending_data()
-        data.pop(payload["listId"], None)
-        self._active_ids.discard(payload["listId"])
+        data.pop(list_id, None)
+        self._active_ids.discard(list_id)
 
 
-_EVENT_HANDLERS: dict[str, Callable[[ListAppCoordinator, dict], None]] = {
+_EVENT_HANDLERS: dict[str, Callable[[ListAppCoordinator, str, dict], None]] = {
     "item.upserted": ListAppCoordinator._apply_item_upserted,
     "item.deleted": ListAppCoordinator._apply_item_deleted,
     "items.reordered": ListAppCoordinator._apply_items_reordered,

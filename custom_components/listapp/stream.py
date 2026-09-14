@@ -83,6 +83,7 @@ class ListAppEventStream:
         self._on_auth_failed = on_auth_failed
         self._on_selection_rejected = on_selection_rejected
         self._task: asyncio.Task[None] | None = None
+        self._connected = False
 
     def start(self) -> None:
         self._task = asyncio.ensure_future(self._run())
@@ -98,6 +99,7 @@ class ListAppEventStream:
     async def _run(self) -> None:
         backoff = STREAM_BACKOFF_INITIAL_SECONDS
         while True:
+            self._connected = False
             try:
                 await self._connect_and_read()
             except _AuthFailed:
@@ -113,6 +115,8 @@ class ListAppEventStream:
                 _LOGGER.debug("ListApp live update stream disconnected: %s", err)
             finally:
                 self._on_state_change(False)
+            if self._connected:
+                backoff = STREAM_BACKOFF_INITIAL_SECONDS
             await asyncio.sleep(backoff + random.uniform(0, backoff * 0.5))
             backoff = min(backoff * 2, STREAM_BACKOFF_MAX_SECONDS)
 
@@ -130,6 +134,7 @@ class ListAppEventStream:
                 raise _SelectionRejected
             if response.status != HTTPStatus.OK:
                 raise _Retryable(f"unexpected status {response.status}")
+            self._connected = True
             self._on_state_change(True)
             async for event in parse_sse(response.content):
                 self._on_event(event)

@@ -8,13 +8,43 @@ from custom_components.listapp.const import (
     POLL_INTERVAL_FALLBACK,
     POLL_INTERVAL_STREAMING,
 )
-from custom_components.listapp.stream import StreamEvent
+from custom_components.listapp.stream import StreamEvent, parse_sse
 
-from .helpers import ACCOUNT_ID, BREAD_ID, GROCERIES_ID, MILK_ID, OTHER_ACCOUNT_ID
+from .helpers import (
+    ACCOUNT_ID,
+    BREAD_ID,
+    GROCERIES_ID,
+    LIST_CHANGE_EVENT_FIELDS,
+    MILK_ID,
+    OTHER_ACCOUNT_ID,
+    deleted_ref,
+    item_payload,
+    ktor_sse_frame,
+    list_change_event,
+    list_payload,
+    member_deleted_ref,
+    reordered_items_ref,
+)
+
+BUTTER_ID = "9c2e0000-0000-4000-8000-000000000099"
+MEMBERSHIP_ID = "5a5a0000-0000-4000-8000-000000000001"
 
 
-async def _emit(coordinator, event: str, payload: dict) -> None:
-    coordinator._handle_stream_event(StreamEvent(event=event, data=json.dumps(payload)))
+async def _emit(coordinator, event_type: str, list_id: str, payload: dict) -> None:
+    envelope = list_change_event(event_type, list_id, payload)
+    coordinator._handle_stream_event(StreamEvent(event=event_type, data=json.dumps(envelope)))
+
+
+class _FakeContent:
+    def __init__(self, data: bytes) -> None:
+        self._lines = data.splitlines(keepends=True)
+
+    async def readline(self) -> bytes:
+        return self._lines.pop(0) if self._lines else b""
+
+
+def test_envelope_matches_server_field_names() -> None:
+    assert tuple(list_change_event("item.deleted", GROCERIES_ID, {})) == LIST_CHANGE_EVENT_FIELDS
 
 
 async def test_stream_already_started_after_setup(setup_integration: MockConfigEntry) -> None:
@@ -29,30 +59,34 @@ async def test_item_upserted_and_batching_coalesces(
     updates = []
     coordinator.async_add_listener(lambda: updates.append(dict(coordinator.data)))
 
-    await _emit(
-        coordinator,
-        "item.upserted",
-        {
-            "id": "9c2e0000-0000-4000-8000-000000000099",
-            "listId": GROCERIES_ID,
-            "content": "Butter",
-            "isChecked": False,
-            "position": 5,
-        },
-    )
-    await _emit(
-        coordinator,
-        "item.deleted",
-        {"id": MILK_ID, "listId": GROCERIES_ID},
-    )
+    await _emit(coordinator, "item.upserted", GROCERIES_ID, item_payload(BUTTER_ID, "Butter", 5))
+    await _emit(coordinator, "item.deleted", GROCERIES_ID, deleted_ref(MILK_ID))
     assert not updates
 
     await asyncio.sleep(0.6)
 
     assert len(updates) == 1
     items = {item.id: item for item in updates[0][GROCERIES_ID].items}
-    assert "9c2e0000-0000-4000-8000-000000000099" in items
+    assert BUTTER_ID in items
     assert MILK_ID not in items
+
+
+async def test_ktor_encoded_frames_apply_end_to_end(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    coordinator = setup_integration.runtime_data
+    raw = (
+        b": heartbeat\r\n\r\n"
+        + ktor_sse_frame("item.deleted", GROCERIES_ID, deleted_ref(MILK_ID))
+        + ktor_sse_frame("items.reordered", GROCERIES_ID, reordered_items_ref([(BREAD_ID, 9)]))
+    )
+    async for event in parse_sse(_FakeContent(raw)):
+        coordinator._handle_stream_event(event)
+    await asyncio.sleep(0.6)
+
+    items = coordinator.data[GROCERIES_ID].items
+    assert MILK_ID not in {item.id for item in items}
+    assert items[-1].id == BREAD_ID
 
 
 async def test_items_reordered(hass: HomeAssistant, setup_integration: MockConfigEntry) -> None:
@@ -60,10 +94,8 @@ async def test_items_reordered(hass: HomeAssistant, setup_integration: MockConfi
     await _emit(
         coordinator,
         "items.reordered",
-        {
-            "listId": GROCERIES_ID,
-            "items": [{"id": MILK_ID, "position": 9}, {"id": BREAD_ID, "position": 0}],
-        },
+        GROCERIES_ID,
+        reordered_items_ref([(MILK_ID, 9), (BREAD_ID, 0)]),
     )
     await asyncio.sleep(0.6)
 
@@ -76,21 +108,34 @@ async def test_list_updated_renames(
     hass: HomeAssistant, setup_integration: MockConfigEntry
 ) -> None:
     coordinator = setup_integration.runtime_data
-    await _emit(
-        coordinator,
-        "list.updated",
-        {"id": GROCERIES_ID, "title": "Shopping", "ownerId": ACCOUNT_ID},
-    )
+    summary = {k: v for k, v in list_payload(GROCERIES_ID, "Shopping", []).items() if k != "items"}
+    await _emit(coordinator, "list.updated", GROCERIES_ID, summary)
     await asyncio.sleep(0.6)
 
     assert coordinator.data[GROCERIES_ID].title == "Shopping"
+    assert coordinator.data[GROCERIES_ID].items
+
+
+async def test_event_for_unselected_list_ignored(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    coordinator = setup_integration.runtime_data
+    before = coordinator.data
+    other = "1f7b0000-0000-4000-8000-0000000000ff"
+    await _emit(coordinator, "item.deleted", other, deleted_ref(MILK_ID))
+    await _emit(coordinator, "items.reordered", other, reordered_items_ref([]))
+    await _emit(coordinator, "item.upserted", other, item_payload(BUTTER_ID, "Butter", 1))
+    await _emit(coordinator, "list.updated", other, list_payload(other, "X", []))
+    await asyncio.sleep(0.6)
+
+    assert coordinator.data == before
 
 
 async def test_list_deleted_removes_list(
     hass: HomeAssistant, setup_integration: MockConfigEntry
 ) -> None:
     coordinator = setup_integration.runtime_data
-    await _emit(coordinator, "list.deleted", {"id": GROCERIES_ID})
+    await _emit(coordinator, "list.deleted", GROCERIES_ID, deleted_ref(GROCERIES_ID))
     await asyncio.sleep(0.6)
 
     assert GROCERIES_ID not in coordinator.data
@@ -101,7 +146,9 @@ async def test_member_deleted_for_self_removes_list(
     hass: HomeAssistant, setup_integration: MockConfigEntry
 ) -> None:
     coordinator = setup_integration.runtime_data
-    await _emit(coordinator, "member.deleted", {"listId": GROCERIES_ID, "userId": ACCOUNT_ID})
+    await _emit(
+        coordinator, "member.deleted", GROCERIES_ID, member_deleted_ref(MEMBERSHIP_ID, ACCOUNT_ID)
+    )
     await asyncio.sleep(0.6)
 
     assert GROCERIES_ID not in coordinator.data
@@ -111,7 +158,10 @@ async def test_member_deleted_for_other_user_ignored(
     hass: HomeAssistant, setup_integration: MockConfigEntry
 ) -> None:
     coordinator = setup_integration.runtime_data
-    await _emit(coordinator, "member.deleted", {"listId": GROCERIES_ID, "userId": OTHER_ACCOUNT_ID})
+    for user_id in (OTHER_ACCOUNT_ID, None):
+        await _emit(
+            coordinator, "member.deleted", GROCERIES_ID, member_deleted_ref(MEMBERSHIP_ID, user_id)
+        )
     await asyncio.sleep(0.6)
 
     assert GROCERIES_ID in coordinator.data
@@ -123,17 +173,17 @@ async def test_unknown_event_type_ignored(
     coordinator = setup_integration.runtime_data
     coordinator._handle_stream_event(StreamEvent(event="member.upserted", data="{}"))
     await asyncio.sleep(0.6)
-    # No crash, no pending batch left dangling.
     assert coordinator._pending is None
 
 
-async def test_unparsable_payload_is_ignored(
+async def test_malformed_frames_are_ignored(
     hass: HomeAssistant, setup_integration: MockConfigEntry
 ) -> None:
     coordinator = setup_integration.runtime_data
-    coordinator._handle_stream_event(StreamEvent(event="item.deleted", data="not json"))
+    for data in ("not json", "[]", json.dumps(deleted_ref(MILK_ID))):
+        coordinator._handle_stream_event(StreamEvent(event="item.deleted", data=data))
     await asyncio.sleep(0.6)
-    assert coordinator._pending is None
+    assert MILK_ID in {item.id for item in coordinator.data[GROCERIES_ID].items}
 
 
 async def test_stream_state_change_switches_poll_interval(

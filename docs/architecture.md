@@ -129,6 +129,29 @@ after the first refresh and cancelled via `entry.async_on_unload` — covers bot
 - The access token is refreshed via the same `OAuth2Session`-backed closure the REST client uses,
   called fresh before every (re)connect attempt. Tokens never appear in a log line.
 
+### <a id="event-frames"></a>Event frames
+
+Verified against `listapp-api` `hacs-integration` (`SelectedListEventRoutes.kt`, `ListEventBus.kt`),
+not inferred. Each frame's SSE `event:` is the type, and `data:` is the whole `ListChangeEvent`
+envelope, not the bare payload:
+
+```json
+{"listId": "…", "type": "item.deleted", "payload": {"id": "…"}, "originUserId": "…", "updatedAt": "…"}
+```
+
+- The list id comes from the envelope. Only `item.upserted` (`ListItemResponse`) and `list.updated`
+  (`ListResponse`) payloads carry one of their own; `item.deleted`/`list.deleted` are `DeletedRef`
+  `{id}`, `member.deleted` is `MemberDeletedRef` `{id, userId}` where `id` is the *membership* id,
+  and `items.reordered` is `ReorderedItemsRef` `{items: [{id, position}]}`.
+- `AppJson` pretty-prints, so the envelope spans several `data:` lines. Ktor also writes `data:`
+  before `event:` and ends lines with `\r\n`; the parser handles all three.
+- `list.updated` carries no `myRole` on this branch (listapp-api#106 adds it, null in events).
+  Nothing here reads it.
+- `originUserId` is ignored: Home Assistant has no optimistic update to de-duplicate against.
+
+`tests/helpers.py` builds fixtures from those Kotlin field names and encodes frames the way Ktor
+does, so a test can't agree with a wrong guess about the shape.
+
 ### Applying events (`coordinator.py`)
 
 `item.upserted`/`item.deleted`/`items.reordered` and `list.updated` mutate the coordinator's data

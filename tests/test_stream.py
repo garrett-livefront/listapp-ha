@@ -125,6 +125,47 @@ async def test_503_reconnects_with_backoff(
     assert True not in states
 
 
+async def test_backoff_resets_after_successful_connection(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, monkeypatch
+) -> None:
+    from custom_components.listapp import stream as stream_module
+
+    aioclient_mock.get(STREAM_URL, content=b"")
+    monkeypatch.setattr(stream_module, "STREAM_BACKOFF_INITIAL_SECONDS", 0.01)
+    jitter_bounds: list[float] = []
+    monkeypatch.setattr(
+        stream_module.random, "uniform", lambda low, high: jitter_bounds.append(high) or 0
+    )
+    stream = _stream(hass)
+
+    stream.start()
+    await asyncio.sleep(0.1)
+    await stream.stop()
+
+    assert len(jitter_bounds) >= 3
+    assert set(jitter_bounds) == {0.005}
+
+
+async def test_backoff_grows_while_never_connecting(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, monkeypatch
+) -> None:
+    from custom_components.listapp import stream as stream_module
+
+    aioclient_mock.get(STREAM_URL, status=503)
+    monkeypatch.setattr(stream_module, "STREAM_BACKOFF_INITIAL_SECONDS", 0.005)
+    jitter_bounds: list[float] = []
+    monkeypatch.setattr(
+        stream_module.random, "uniform", lambda low, high: jitter_bounds.append(high) or 0
+    )
+    stream = _stream(hass)
+
+    stream.start()
+    await asyncio.sleep(0.1)
+    await stream.stop()
+
+    assert jitter_bounds[:3] == [0.0025, 0.005, 0.01]
+
+
 async def test_stop_cancels_task(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> None:
     aioclient_mock.get(STREAM_URL, content=b"")
     stream = _stream(hass)
