@@ -72,6 +72,13 @@ class ListAppClient:
         self._get_access_token = get_access_token
         self._base_url = base_url
 
+    @property
+    def base_url(self) -> str:
+        return self._base_url
+
+    async def async_get_access_token(self) -> str:
+        return await self._get_access_token()
+
     async def _request(self, method: str, path: str, json: Any = None) -> Any:
         token = await self._get_access_token()
         try:

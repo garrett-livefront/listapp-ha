@@ -8,11 +8,18 @@ from homeassistant.helpers import config_entry_oauth2_flow
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
-from custom_components.listapp.const import API_BASE_URL, DOMAIN, OAUTH_TOKEN_URL
+from custom_components.listapp.const import (
+    API_BASE_URL,
+    CONF_READ_ONLY,
+    CONF_SELECTED_LISTS,
+    DOMAIN,
+    MAX_SELECTED_LISTS,
+    OAUTH_TOKEN_URL,
+)
 from custom_components.listapp.oauth import ListAppOAuth2Implementation, async_ensure_implementation
 
 from .conftest import register_lists
-from .helpers import groceries
+from .helpers import groceries, list_payload
 
 
 def _has_reauth_flow(hass: HomeAssistant) -> bool:
@@ -122,3 +129,31 @@ async def test_concurrent_registration_keeps_one_implementation(hass: HomeAssist
 
     implementations = await config_entry_oauth2_flow.async_get_implementations(hass, DOMAIN)
     assert implementations[DOMAIN] is first
+
+
+def _list_index_calls(aioclient_mock: AiohttpClientMocker) -> int:
+    return sum(
+        1 for _, url, _, _ in aioclient_mock.mock_calls if str(url) == f"{API_BASE_URL}/lists"
+    )
+
+
+@pytest.mark.parametrize("options", [{CONF_READ_ONLY: False}])
+async def test_h2_entry_migrates_selection_once(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, config_entry: MockConfigEntry
+) -> None:
+    many = [list_payload(f"1f7b0000-0000-4000-8000-{i:012d}", f"List {i}", []) for i in range(30)]
+    register_lists(aioclient_mock, many)
+
+    await _setup(hass, config_entry)
+
+    assert config_entry.state is ConfigEntryState.LOADED
+    expected = [lst["id"] for lst in many[:MAX_SELECTED_LISTS]]
+    assert config_entry.options == {CONF_READ_ONLY: False, CONF_SELECTED_LISTS: expected}
+    calls = _list_index_calls(aioclient_mock)
+    assert calls == 1
+
+    assert await hass.config_entries.async_reload(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert config_entry.state is ConfigEntryState.LOADED
+    assert _list_index_calls(aioclient_mock) == calls

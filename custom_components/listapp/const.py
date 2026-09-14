@@ -19,6 +19,19 @@ SCOPE_READ: Final = "lists:read"
 SCOPE_WRITE: Final = "lists:write"
 
 CONF_READ_ONLY: Final = "read_only"
+CONF_SELECTED_LISTS: Final = "selected_lists"
 
-UPDATE_INTERVAL: Final = timedelta(seconds=60)
+MAX_SELECTED_LISTS: Final = 25
+
 REQUEST_TIMEOUT_SECONDS: Final = 15
+
+# Poll intervals: see docs/architecture.md#what-h3-adds for why these two numbers.
+POLL_INTERVAL_STREAMING: Final = timedelta(minutes=15)
+POLL_INTERVAL_FALLBACK: Final = timedelta(seconds=60)
+UPDATE_INTERVAL: Final = POLL_INTERVAL_FALLBACK
+
+STREAM_BURST_SECONDS: Final = 0.5
+STREAM_HEARTBEAT_SECONDS: Final = 25
+STREAM_HEARTBEAT_TIMEOUT_SECONDS: Final = STREAM_HEARTBEAT_SECONDS * 2.5
+STREAM_BACKOFF_INITIAL_SECONDS: Final = 1
+STREAM_BACKOFF_MAX_SECONDS: Final = 60

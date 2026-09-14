@@ -7,6 +7,15 @@
       "reauth_confirm": {
         "title": "Sign in to ListApp again",
         "description": "Home Assistant needs you to sign in to ListApp again to keep your lists connected."
+      },
+      "select_lists": {
+        "title": "Choose your lists",
+        "data": {
+          "selected_lists": "Lists"
+        },
+        "data_description": {
+          "selected_lists": "Each selected list becomes a Home Assistant entity, up to 25."
+        }
       }
     },
     "abort": {
@@ -14,6 +23,9 @@
       "oauth_unauthorized": "ListApp did not accept the sign-in. Try linking your account again.",
       "cannot_connect":"Could not reach ListApp. Try again later.",
       "wrong_account": "You signed in with a different ListApp account than the one being re-linked."
+    },
+    "error": {
+      "too_many_lists": "Choose at most 25 lists."
     },
     "create_entry": {
       "default": "Your ListApp account is linked."
@@ -24,12 +36,17 @@
       "init": {
         "title": "ListApp options",
         "data": {
-          "read_only": "Read-only mode"
+          "read_only": "Read-only mode",
+          "selected_lists": "Lists"
         },
         "data_description": {
-          "read_only": "Only allow Home Assistant to read your lists. Changing this asks you to sign in to ListApp again."
+          "read_only": "Only allow Home Assistant to read your lists. Changing this asks you to sign in to ListApp again.",
+          "selected_lists": "Each selected list becomes a Home Assistant entity, up to 25. Changing this reconnects live updates."
         }
       }
+    },
+    "error": {
+      "too_many_lists": "Choose at most 25 lists."
     }
   },
   "exceptions": {
