@@ -13,15 +13,26 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers import config_entry_oauth2_flow
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import ListAppAuthError, ListAppClient, ListAppError
-from .const import CONF_READ_ONLY, DOMAIN
+from .const import CONF_READ_ONLY, CONF_SELECTED_LISTS, DOMAIN, MAX_SELECTED_LISTS
 from .oauth import async_ensure_implementation, requested_scopes
+
+
+def _lists_schema(available: list[dict[str, Any]], default: list[str]) -> vol.Schema:
+    options = {lst["id"]: lst["title"] for lst in available}
+    field = vol.Required(CONF_SELECTED_LISTS, default=default)
+    return vol.Schema({field: cv.multi_select(options)})
 
 
 class ListAppFlowHandler(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMAIN):
     DOMAIN = DOMAIN
+
+    _oauth_data: dict[str, Any]
+    _entry_title: str
+    _available_lists: list[dict[str, Any]]
 
     @property
     def logger(self) -> logging.Logger:
@@ -70,16 +81,61 @@ class ListAppFlowHandler(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, dom
             self._abort_if_unique_id_mismatch(reason="wrong_account")
             return self.async_update_reload_and_abort(self._get_reauth_entry(), data=data)
         self._abort_if_unique_id_configured()
-        return self.async_create_entry(title=me["email"], data=data)
+
+        self._oauth_data = data
+        self._entry_title = me["email"]
+        try:
+            self._available_lists = await client.async_get_lists()
+        except ListAppError:
+            self._available_lists = []
+        return await self.async_step_select_lists()
+
+    async def async_step_select_lists(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            selected = user_input[CONF_SELECTED_LISTS]
+            if len(selected) > MAX_SELECTED_LISTS:
+                errors[CONF_SELECTED_LISTS] = "too_many_lists"
+            else:
+                return self.async_create_entry(
+                    title=self._entry_title,
+                    data=self._oauth_data,
+                    options={CONF_SELECTED_LISTS: selected},
+                )
+
+        default = [lst["id"] for lst in self._available_lists[:MAX_SELECTED_LISTS]]
+        return self.async_show_form(
+            step_id="select_lists",
+            data_schema=_lists_schema(self._available_lists, default),
+            errors=errors,
+        )
 
 
 class ListAppOptionsFlow(OptionsFlowWithReload):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
+            selected = user_input[CONF_SELECTED_LISTS]
+            if len(selected) > MAX_SELECTED_LISTS:
+                errors[CONF_SELECTED_LISTS] = "too_many_lists"
+            else:
+                return self.async_create_entry(data=user_input)
 
-        schema = vol.Schema({vol.Required(CONF_READ_ONLY, default=False): bool})
+        coordinator = self.config_entry.runtime_data
+        try:
+            available = await coordinator.client.async_get_lists()
+        except ListAppError:
+            available = []
+        default = self.config_entry.options.get(
+            CONF_SELECTED_LISTS, [lst["id"] for lst in available[:MAX_SELECTED_LISTS]]
+        )
+        schema = vol.Schema({vol.Required(CONF_READ_ONLY, default=False): bool}).extend(
+            _lists_schema(available, default).schema
+        )
         return self.async_show_form(
             step_id="init",
             data_schema=self.add_suggested_values_to_schema(schema, self.config_entry.options),
+            errors=errors,
         )

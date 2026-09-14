@@ -6,7 +6,7 @@
   "dependencies": ["auth"],
   "documentation": "https://github.com/garrett-livefront/listapp-ha",
   "integration_type": "service",
-  "iot_class": "cloud_polling",
+  "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/garrett-livefront/listapp-ha/issues",
   "requirements": [],
   "version": "0.0.0"
