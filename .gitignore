@@ -18,3 +18,5 @@ config/
 .DS_Store
 .idea/
 .vscode/
+
+.worktrees/
