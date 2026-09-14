@@ -252,6 +252,64 @@ async def test_member_upserted_without_role_schedules_refresh(
     assert coordinator.data[GROCERIES_ID].my_role == "EDITOR"
 
 
+async def test_stale_poll_cannot_revert_a_demotion(
+    hass: HomeAssistant, setup_integration: MockConfigEntry, aioclient_mock
+) -> None:
+    """A poll that started before a demotion event can't overwrite it with a stale role.
+
+    Copilot review comment on PR #5 — see docs/architecture.md#roles.
+    """
+    coordinator = setup_integration.runtime_data
+    await _emit(
+        coordinator,
+        "member.upserted",
+        GROCERIES_ID,
+        member_upserted_ref(MEMBERSHIP_ID, ACCOUNT_ID, "VIEWER"),
+    )
+    await asyncio.sleep(0.6)
+    assert coordinator.data[GROCERIES_ID].my_role == "VIEWER"
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(
+        f"{coordinator.client.base_url}/lists/{GROCERIES_ID}",
+        json=list_payload(GROCERIES_ID, "Groceries", [], my_role="OWNER"),
+    )
+    result = await coordinator._async_update_data()
+
+    assert result[GROCERIES_ID].my_role == "VIEWER"
+
+
+async def test_poll_confirming_a_role_drops_the_override(
+    hass: HomeAssistant, setup_integration: MockConfigEntry, aioclient_mock
+) -> None:
+    coordinator = setup_integration.runtime_data
+    await _emit(
+        coordinator,
+        "member.upserted",
+        GROCERIES_ID,
+        member_upserted_ref(MEMBERSHIP_ID, ACCOUNT_ID, "VIEWER"),
+    )
+    await asyncio.sleep(0.6)
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(
+        f"{coordinator.client.base_url}/lists/{GROCERIES_ID}",
+        json=list_payload(GROCERIES_ID, "Groceries", [], my_role="VIEWER"),
+    )
+    await coordinator._async_update_data()
+    assert coordinator._role_overrides == {}
+
+    # A later poll going stale again must not revert to VIEWER-then-OWNER guessing —
+    # the override is gone, so the poll's own (now-newer) result wins outright.
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(
+        f"{coordinator.client.base_url}/lists/{GROCERIES_ID}",
+        json=list_payload(GROCERIES_ID, "Groceries", [], my_role="EDITOR"),
+    )
+    result = await coordinator._async_update_data()
+    assert result[GROCERIES_ID].my_role == "EDITOR"
+
+
 async def test_malformed_frames_are_ignored(
     hass: HomeAssistant, setup_integration: MockConfigEntry
 ) -> None:

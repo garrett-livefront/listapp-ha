@@ -57,6 +57,7 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         self._pending: list[tuple[_EventHandler, str, dict]] = []
         self._batch_handle: asyncio.TimerHandle | None = None
         self._pending_role_refresh = False
+        self._role_overrides: dict[str, str] = {}
 
     @property
     def account_id(self) -> str:
@@ -99,7 +100,19 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         except ListAppError as err:
             raise UpdateFailed(str(err)) from err
         # Re-checked: a stream removal can land while the requests are in flight.
-        return {lst.id: lst for lst in lists if lst is not None and lst.id in self._active_ids}
+        result = {lst.id: lst for lst in lists if lst is not None and lst.id in self._active_ids}
+        # A poll started before a member.upserted demotion can finish after it and carry a
+        # stale role. Reapply any not-yet-confirmed override so it can't revert the demotion —
+        # see docs/architecture.md#roles.
+        for list_id, role in list(self._role_overrides.items()):
+            lst = result.get(list_id)
+            if lst is None:
+                continue
+            if lst.my_role == role:
+                del self._role_overrides[list_id]
+            else:
+                result[list_id] = replace(lst, my_role=role)
+        return result
 
     def async_start_stream(self) -> None:
         self._stream = ListAppEventStream(
@@ -211,12 +224,14 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
             raise ValueError("list.deleted names a different list")
         data.pop(list_id, None)
         self._active_ids.discard(list_id)
+        self._role_overrides.pop(list_id, None)
 
     def _apply_member_deleted(self, data: dict, list_id: str, payload: dict) -> None:
         if payload.get("userId") != self.account_id:
             return
         data.pop(list_id, None)
         self._active_ids.discard(list_id)
+        self._role_overrides.pop(list_id, None)
 
     def _apply_member_upserted(self, data: dict, list_id: str, payload: dict) -> None:
         if payload.get("userId") != self.account_id:
@@ -225,6 +240,9 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         if role is None:
             self._pending_role_refresh = True
             return
+        # Recorded so a poll already in flight can't overwrite this with a stale role — see
+        # _async_update_data and docs/architecture.md#roles.
+        self._role_overrides[list_id] = role
         lst = data.get(list_id)
         if lst is not None:
             data[lst.id] = replace(lst, my_role=role)
