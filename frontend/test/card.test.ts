@@ -5,6 +5,7 @@ import { TodoItemStatus, type HomeAssistant, type TodoItem } from "../src/ha.js"
 
 const ENTITY = "todo.listapp_test";
 const WRITE = 1 | 2 | 4 | 8;
+const SUBSCRIBE_RETRY_CAP_MS = 30_000;
 
 type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void; reject: (reason?: unknown) => void };
 
@@ -106,6 +107,7 @@ beforeEach(() => {
 afterEach(() => {
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -139,6 +141,125 @@ describe("subscription lifecycle", () => {
     hass.subscribeDeferred.resolve(() => undefined);
     await flush();
     expect(hass.unsubscribed).toEqual([ENTITY]);
+  });
+});
+
+describe("subscription retry", () => {
+  const tick = () => vi.advanceTimersByTimeAsync(0);
+
+  function failingSubscribe(hass: FakeHass, shouldFail: () => boolean) {
+    const attempts = { count: 0 };
+    hass.connection.subscribeMessage = <T>(callback: (message: T) => void, message: Record<string, unknown>) => {
+      attempts.count++;
+      if (shouldFail()) {
+        return Promise.reject(new Error("subscribe failed"));
+      }
+      const entity = message.entity_id as string;
+      hass.subscribers.set(entity, callback as (update: { items: TodoItem[] }) => void);
+      return Promise.resolve(() => {
+        hass.subscribers.delete(entity);
+        hass.unsubscribed.push(entity);
+      });
+    };
+    return attempts;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  it("retries on a backoff timer, not on every hass update", async () => {
+    const attempts = failingSubscribe(hass, () => true);
+    const card = await mount(hass);
+    await tick();
+    expect(attempts.count).toBe(1);
+
+    for (let i = 0; i < 5; i++) {
+      card.requestUpdate("hass", undefined);
+      await card.updateComplete;
+    }
+    expect(attempts.count).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(attempts.count).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(attempts.count).toBe(2);
+
+    await vi.advanceTimersByTimeAsync(3_999);
+    expect(attempts.count).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(attempts.count).toBe(3);
+
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(attempts.count).toBe(4);
+  });
+
+  it("caps the delay so a long outage still retries every 30s", async () => {
+    const attempts = failingSubscribe(hass, () => true);
+    await mount(hass);
+    await tick();
+    for (let i = 0; i < 6; i++) {
+      await vi.advanceTimersByTimeAsync(SUBSCRIBE_RETRY_CAP_MS);
+    }
+    const settled = attempts.count;
+    await vi.advanceTimersByTimeAsync(SUBSCRIBE_RETRY_CAP_MS);
+    expect(attempts.count).toBe(settled + 1);
+  });
+
+  it("restarts the backoff from the shortest delay after a successful subscribe", async () => {
+    let fail = true;
+    const attempts = failingSubscribe(hass, () => fail);
+    const card = await mount(hass);
+    await tick();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(attempts.count).toBe(3);
+
+    fail = false;
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(attempts.count).toBe(4);
+    hass.push(ENTITY, [item("a", "Milk")]);
+    await card.updateComplete;
+    expect(root(card).textContent).toContain("Milk");
+
+    fail = true;
+    card.remove();
+    document.body.append(card);
+    await card.updateComplete;
+    await tick();
+    expect(attempts.count).toBe(5);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(attempts.count).toBe(6);
+  });
+
+  it("cancels a pending retry when the card is disconnected", async () => {
+    const attempts = failingSubscribe(hass, () => true);
+    const card = await mount(hass);
+    await tick();
+    expect(attempts.count).toBe(1);
+    card.remove();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(attempts.count).toBe(1);
+  });
+
+  it("does not schedule a retry for a failure that lands after teardown", async () => {
+    const pending = deferred<() => void>();
+    let attempts = 0;
+    hass.connection.subscribeMessage = <T>(_callback: (message: T) => void, _message: Record<string, unknown>) => {
+      attempts++;
+      return pending.promise;
+    };
+    const card = await mount(hass);
+    await tick();
+    expect(attempts).toBe(1);
+
+    card.remove();
+    pending.reject(new Error("subscribe failed"));
+    await tick();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(attempts).toBe(1);
   });
 });
 
@@ -313,6 +434,34 @@ describe("availability", () => {
     await flush();
     await card.updateComplete;
     expect(root(card).textContent).not.toContain("sign in");
+  });
+
+  it("discards an entry-id lookup that lands after the entity vanished", async () => {
+    const registry = deferred<unknown>();
+    let pending = true;
+    const registryCalls = () => hass.callWS.mock.calls.filter(([m]) => m.type === "config/entity_registry/get").length;
+    hass.callWS.mockImplementation((message) => {
+      if (message.type === "config/entity_registry/get") {
+        return pending ? registry.promise : Promise.resolve({ entity_id: ENTITY, config_entry_id: "e1" });
+      }
+      return Promise.resolve([]);
+    });
+    hass.setEntity(ENTITY, "unavailable");
+    const card = await mount(hass);
+    expect(registryCalls()).toBe(1);
+
+    hass.states = {};
+    card.requestUpdate("hass", undefined);
+    await card.updateComplete;
+    pending = false;
+    registry.resolve({ entity_id: ENTITY, config_entry_id: "e1" });
+    await flush();
+
+    hass.setEntity(ENTITY, "unavailable");
+    card.requestUpdate("hass", undefined);
+    await card.updateComplete;
+    await flush();
+    expect(registryCalls()).toBe(2);
   });
 
   it("clears the recheck interval on disconnect", async () => {

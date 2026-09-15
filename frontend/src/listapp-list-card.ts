@@ -35,6 +35,9 @@ import { STRINGS as S } from "./strings.js";
 
 const WIDE_BREAKPOINT = 560;
 const AVAILABILITY_RECHECK_MS = 30_000;
+// Doubling from 2s, capped at 30s — see docs/card.md#subscription-retry
+const SUBSCRIBE_RETRY_BASE_MS = 2_000;
+const SUBSCRIBE_RETRY_MAX_MS = 30_000;
 
 type Dialog = { kind: "edit"; item: TodoItem } | { kind: "confirm-clear"; uids: string[] };
 type Menu = "active" | "completed";
@@ -67,6 +70,9 @@ export class ListAppListCard extends LitElement {
   private _unsub?: Promise<() => void>;
   private _subscribedEntity?: string;
   private _subscriptionGeneration = 0;
+  private _retryTimer?: number;
+  private _retryAttempts = 0;
+  private _retryEntity?: string;
   private _resize?: ResizeObserver;
   private _availabilityTimer?: number;
   private _checkedAvailabilityFor?: string;
@@ -76,6 +82,7 @@ export class ListAppListCard extends LitElement {
   private _itemsVersion = 0;
   private _entryIdFor?: string;
   private _entryId?: string | null;
+  private _entryIdGeneration = 0;
   private _paletteKey?: string;
   private _palette?: Palette;
 
@@ -170,6 +177,7 @@ export class ListAppListCard extends LitElement {
       this._items = undefined;
       this._entryIdFor = undefined;
       this._entryId = undefined;
+      this._entryIdGeneration++;
       this._closeDialog();
       this._menu = null;
     } else if (this._subscribedEntity !== this._config.entity || (!this._unsub && entityPresent)) {
@@ -217,6 +225,10 @@ export class ListAppListCard extends LitElement {
       return;
     }
     const entity = this._config.entity;
+    if (this._retryEntity !== entity) {
+      this._retryEntity = entity;
+      this._retryAttempts = 0;
+    }
     const generation = ++this._subscriptionGeneration;
     this._subscribedEntity = entity;
     const attempt = subscribeItems(this.hass, entity, (update) => {
@@ -224,18 +236,46 @@ export class ListAppListCard extends LitElement {
         this._items = update.items;
         this._itemsVersion++;
       }
-    }).catch((err: unknown) => {
-      console.warn("listapp-list-card: item subscription failed", err);
-      if (this._unsub === attempt) {
-        this._unsub = undefined;
-        this._subscribedEntity = undefined;
-      }
-      return () => undefined;
-    });
+    })
+      .then((unsub) => {
+        if (this._subscriptionGeneration === generation) {
+          this._retryAttempts = 0;
+        }
+        return unsub;
+      })
+      .catch((err: unknown) => {
+        console.warn("listapp-list-card: item subscription failed", err);
+        if (this._subscriptionGeneration === generation) {
+          this._scheduleRetry();
+        }
+        return () => undefined;
+      });
     this._unsub = attempt;
   }
 
+  // Recovery is driven by the timer, not by the next `hass` update — see docs/card.md#subscription-retry
+  private _scheduleRetry(): void {
+    const delay = Math.min(SUBSCRIBE_RETRY_BASE_MS * 2 ** this._retryAttempts, SUBSCRIBE_RETRY_MAX_MS);
+    this._retryAttempts++;
+    this._cancelRetry();
+    this._retryTimer = window.setTimeout(() => {
+      this._retryTimer = undefined;
+      if (this.isConnected) {
+        this._subscribe();
+      }
+    }, delay);
+  }
+
+  private _cancelRetry(): void {
+    if (this._retryTimer !== undefined) {
+      window.clearTimeout(this._retryTimer);
+      this._retryTimer = undefined;
+    }
+  }
+
   private _unsubscribe(): void {
+    this._cancelRetry();
+    this._subscriptionGeneration++;
     this._unsub?.then((unsub) => unsub());
     this._unsub = undefined;
     this._subscribedEntity = undefined;
@@ -302,9 +342,14 @@ export class ListAppListCard extends LitElement {
       return undefined;
     }
     if (this._entryIdFor !== entity) {
+      const generation = ++this._entryIdGeneration;
       try {
-        this._entryId = (await fetchEntityRegistryEntry(this.hass, entity)).config_entry_id ?? null;
-        // Only cache a successful lookup — see docs/card.md#auth-vs-transient-unavailability.
+        const entryId = (await fetchEntityRegistryEntry(this.hass, entity)).config_entry_id ?? null;
+        // Only cache a successful, still-current lookup — see docs/card.md#auth-vs-transient-unavailability.
+        if (this._entryIdGeneration !== generation || this._config?.entity !== entity) {
+          return undefined;
+        }
+        this._entryId = entryId;
         this._entryIdFor = entity;
       } catch {
         return undefined;

@@ -113,7 +113,7 @@ stock card (due dates, descriptions and the stock card's display-order option ar
   (the same toast the stock card gets from `showToast`) with "Listapp couldn't save that change.
   Try again." and re-renders so a checkbox snaps back to the real state. A rejected `add_item`
   leaves the typed text in the field, a rejected rename or delete keeps the dialog open, and a
-  failed `todo/item/subscribe` clears the subscription state so the next `hass` update retries it;
+  failed `todo/item/subscribe` schedules a retry (see [Subscription retry](#subscription-retry));
   a failed `remove_item` also keeps the confirm-clear dialog open, matching the single-item delete
   path; reconnecting (`connectedCallback`) re-runs availability tracking instead of trusting a stale
   guard (Copilot review comments on PR #14).
@@ -144,6 +144,30 @@ call always produces a push, so a success that overlaps a failure protects itsel
 
 A drop or arrow-key move for an item that's no longer active (checked off by someone else during
 the drag) is ignored rather than sent as a move-to-top of a completed item.
+
+### Subscription retry
+
+A rejected `todo/item/subscribe` used to clear `_unsub`/`_subscribedEntity` and let `willUpdate`
+re-subscribe on the next `hass` update. That is both too eager and too passive: `hass` changes on
+*any* state change anywhere in Home Assistant, so a persistently failing subscription retried many
+times a minute on a busy instance (only one in flight at a time, so it was self-limiting but noisy),
+while on a quiet instance recovery depended on unrelated traffic arriving at all.
+
+The failure path now keeps the subscription state as-is — so `willUpdate` sees nothing to do — and
+schedules a retry with `setTimeout`: 2 s, 4 s, 8 s, 16 s, then 30 s for every further failure. The
+**first** attempt is never delayed; the delay only applies between retries. `_retryAttempts` resets
+on a subscribe that resolves and whenever the subscribed entity changes (`_retryEntity`), so a
+recovered card that fails again later starts from 2 s rather than the capped delay. There is no
+jitter: a single card per entity has nothing to stampede, and a deterministic schedule is what makes
+the backoff testable under fake timers.
+
+The pending timer is cleared in `_unsubscribe`, which covers disconnect, an entity change, and the
+entity vanishing — a disconnected card never resubscribes, and the retry callback also re-checks
+`isConnected` before firing. `_unsubscribe` also bumps `_subscriptionGeneration`, so an attempt that
+was already in flight when teardown happened cannot schedule a *new* timer when it rejects moments
+later: without that bump the generation check still matched, and a card that had just been
+disconnected — or whose entity had just disappeared — started a retry chain nothing would cancel
+(Copilot review comment on PR #18).
 
 ### In-flight guard
 
@@ -241,7 +265,12 @@ card calls `config_entries/get` (domain `listapp`) and `config_entries/flow/prog
 in; otherwise transient. Both checks are scoped to the entity's own config entry — looked up once per
 entity via `config/entity_registry/get` — so with two ListApp accounts linked, a reauth on account A
 doesn't put account B's cards into the auth state (Copilot review comment on PR #14). If the registry
-lookup fails the scope widens to any `listapp` entry. It re-checks every 30 s while unavailable and
+lookup fails the scope widens to any `listapp` entry. Only a *current* lookup is cached: the
+round-trip can outlive the cache it was meant to fill (`willUpdate` clears `_entryIdFor`/`_entryId`
+when the entity vanishes, e.g. on a config-entry reload), so `_entryIdGeneration` — the same
+generation-counter pattern `_subscriptionGeneration` and `_availabilityGeneration` use — discards a
+result whose lookup is no longer the current one, leaving the next check to re-read the registry
+instead of trusting an id from before the reload. It re-checks every 30 s while unavailable and
 resets when the entity recovers. If the websocket calls themselves fail, it falls back to transient.
 The unavailable layouts replace the header entirely (the design's choice), so there is no
 "Unavailable" subline. The integration
@@ -399,7 +428,7 @@ component's own pinned requirement) — see `requirements_test.txt` and `test.ym
 matrix, which pins the same package to the version the 2026.3 plugin's `frontend` component
 requires.
 
-Card unit tests (`frontend/test/`, 103 cases): state derivation and priorities, collapse, viewer
+Card unit tests (`frontend/test/`, 108 cases): state derivation and priorities, collapse, viewer
 gating, option defaults and validation, the `avatarColor` vectors, glyph/ink contrast over all 14
 colours, icon key mapping, availability classification, move → `previous_uid`, and rename preserving
 status. `card.test.ts` mounts the real `ListAppListCard` under happy-dom (a per-file
@@ -409,7 +438,10 @@ It pins the race behaviour: unsubscribe on disconnect (including a subscription 
 after disconnect), pushes for a previous entity being dropped, both overlapping failed toggles
 rolling back, no rollback over a newer push, the in-flight guards, the Completed menu opening
 upward, dialog/menu closing on disconnect, a drop for an item that left the active list, a slow
-availability check landing after recovery, and the recheck interval stopping on disconnect.
+availability check landing after recovery, the recheck interval stopping on disconnect, the
+subscribe backoff (retrying on its own timer rather than on `hass` updates, the 30 s cap, the reset
+after a successful subscribe, and cancellation on disconnect — all under fake timers), and an
+entry-id lookup that lands after the entity vanished being discarded.
 happy-dom has no layout, so `ResizeObserver` is stubbed and nothing asserts on geometry;
 `frontend/dev/harness.js` remains the visual check and is not run in CI.
 
