@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Captures README screenshots from the dev harness via CDP. See CONTRIBUTING.md#screenshots.
+// Captures README screenshots from the dev harness via CDP. See CONTRIBUTING.md#readme-screenshots.
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -70,7 +70,8 @@ async function main() {
       });
       await sleep(400);
 
-      // Measure `main` itself, not documentElement — an empty-viewport body can inflate scrollHeight.
+      // Measure the full page (both theme columns) so the device viewport covers both
+      // before clipping each column out individually below.
       const { result } = await cdp(ws, "Runtime.evaluate", {
         expression: "({w: document.documentElement.scrollWidth, h: document.querySelector('main').scrollHeight})",
         returnByValue: true,
@@ -85,15 +86,25 @@ async function main() {
       });
       await sleep(200);
 
-      const { data } = await cdp(ws, "Page.captureScreenshot", {
-        format: "png",
-        captureBeyondViewport: true,
-        clip: { x: 0, y: 0, width: w, height: h, scale: 1 },
-      });
+      // The harness renders `.theme.light` and `.theme.dark` side by side in one `main`
+      // (see harness.js render()); clip each column out of the same page separately.
+      for (const theme of ["light", "dark"]) {
+        const { result: rectResult } = await cdp(ws, "Runtime.evaluate", {
+          expression: `(() => { const r = document.querySelector(".theme.${theme}").getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`,
+          returnByValue: true,
+        });
+        const clip = { ...rectResult.value, scale: 1 };
 
-      const outPath = new URL(`card-${shot.name}.png`, OUT_DIR);
-      await writeFile(outPath, Buffer.from(data, "base64"));
-      console.log(`wrote ${outPath.pathname}`);
+        const { data } = await cdp(ws, "Page.captureScreenshot", {
+          format: "png",
+          captureBeyondViewport: true,
+          clip,
+        });
+
+        const outPath = new URL(`card-${shot.name}-${theme}.png`, OUT_DIR);
+        await writeFile(outPath, Buffer.from(data, "base64"));
+        console.log(`wrote ${outPath.pathname}`);
+      }
     }
 
     ws.close();
