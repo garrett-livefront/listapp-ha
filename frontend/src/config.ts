@@ -44,8 +44,8 @@ export function resolveConfig(config: ListAppCardConfig): ResolvedConfig {
   ) {
     throw new Error("item_tap_action must be 'toggle' or 'edit'");
   }
-  const collapse = Number(config.collapse_to ?? 0);
-  if (!Number.isInteger(collapse) || collapse < 0) {
+  const collapse = config.collapse_to ?? 0;
+  if (typeof collapse !== "number" || !Number.isInteger(collapse) || collapse < 0) {
     throw new Error("collapse_to must be a non-negative integer");
   }
   return {

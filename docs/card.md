@@ -89,14 +89,18 @@ Everything in `model.ts`, `config.ts`, `color.ts` and `icons.ts` is DOM-free and
 ### Behaviour mirrors the stock to-do card
 
 The card adapts Home Assistant's `hui-todo-list-card` (Apache-2.0; credited in `NOTICE`) rather than
-inventing its own semantics, so anything that works with the stock card works here:
+inventing its own semantics, so the item operations it supports behave exactly as they do in the
+stock card (due dates, descriptions and the stock card's display-order option are not in this slice):
 
 - Items come from the websocket subscription `todo/item/subscribe` (re-subscribed when the entity
   changes, unsubscribed on disconnect), not from polling `todo/item/list`.
 - Checking/unchecking calls `todo.update_item` with `status`; adding calls `todo.add_item`;
   rename calls `todo.update_item` with `rename`; delete and "Clear completed" call
   `todo.remove_item` with a list of uids; reorder calls the websocket `todo/item/move` with
-  `previous_uid` (`undefined` for "move to top"), after an optimistic local reorder.
+  `previous_uid` (`undefined` for "move to top"), after an optimistic local reorder that is rolled
+  back if the call rejects (unless a subscription update has replaced the items meanwhile). A
+  rejected `add_item` leaves the typed text in the field so it can be retried; a failed
+  `todo/item/subscribe` clears the subscription state so the next `hass` update retries it.
 - `unknown` is treated like `unavailable`.
 - Menus are exactly the stock card's: the Active section's ⋯ offers "Reorder items" / "Done
   reordering" only when the entity supports `MOVE_TODO_ITEM`; the Completed section's ⋯ offers
@@ -149,7 +153,7 @@ Derived in `model.ts#deriveView`, in priority order:
 | `unavailable_auth` | entity `unavailable`/`unknown` **and** a `listapp` reauth flow is in progress (or the config entry is in `setup_error` with an auth-flavoured reason) | replaces header and body: warning triangle, "List unavailable", "ListApp needs you to sign in again…", **Sign in** |
 | `unavailable_transient` | `unavailable`/`unknown` otherwise | same layout with a cloud-off icon, "Can't reach ListApp right now", **Check integration** |
 | `loading` | subscribed, no message yet | header only |
-| `empty` | zero items | check-square tile, "Nothing on this list", "Add the first item above, or ask Assist to add one." (viewers see "Nothing has been added yet.") |
+| `empty` | zero items | check-square tile, "Nothing on this list", "Add the first item above, or ask Assist to add one." (with `show_add: false`: "Ask Assist or the ListApp app to add the first item."; viewers see "Nothing has been added yet.") |
 | `all_done` | items but no active | accent circle with a check, "All done", "Every item on this list is checked off." or "N completed items are hidden." when `show_completed: false` |
 | `list` | otherwise | Active and Completed sections |
 

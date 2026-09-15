@@ -53,6 +53,8 @@ describe("resolveConfig", () => {
     expect(() => resolveConfig({ type: "x" } as never)).toThrow(/todo domain/);
     expect(() => resolveConfig({ type: "x", entity: "todo.a", collapse_to: -1 })).toThrow(/collapse_to/);
     expect(() => resolveConfig({ type: "x", entity: "todo.a", collapse_to: 1.5 })).toThrow(/collapse_to/);
+    expect(() => resolveConfig({ type: "x", entity: "todo.a", collapse_to: "3" as never })).toThrow(/collapse_to/);
+    expect(() => resolveConfig({ type: "x", entity: "todo.a", collapse_to: true as never })).toThrow(/collapse_to/);
     expect(() =>
       resolveConfig({ type: "x", entity: "todo.a", item_tap_action: "open" as never }),
     ).toThrow(/item_tap_action/);

@@ -16,6 +16,7 @@ export const STRINGS = {
   editLabel: "Item",
   emptyTitle: "Nothing on this list",
   emptyBody: "Add the first item above, or ask Assist to add one.",
+  emptyBodyNoAdd: "Ask Assist or the ListApp app to add the first item.",
   emptyBodyViewer: "Nothing has been added yet.",
   allDoneTitle: "All done",
   allDoneBody: "Every item on this list is checked off.",

@@ -78,6 +78,9 @@ export class ListAppListCard extends LitElement {
       return 3;
     }
     const view = this._view();
+    if (view.state === "missing" || view.state === "unavailable_auth" || view.state === "unavailable_transient") {
+      return 3;
+    }
     const columns = this._wide ? 2 : 1;
     const completedRows = view.showCompleted && !this._reordering ? view.completed.length : 0;
     const rows = Math.ceil(view.visibleActive.length / columns) + Math.ceil(completedRows / columns);
@@ -146,14 +149,19 @@ export class ListAppListCard extends LitElement {
     }
     const entity = this._config.entity;
     this._subscribedEntity = entity;
-    this._unsub = subscribeItems(this.hass, entity, (update) => {
+    const attempt = subscribeItems(this.hass, entity, (update) => {
       if (this._subscribedEntity === entity) {
         this._items = update.items;
       }
     }).catch((err: unknown) => {
       console.warn("listapp-list-card: item subscription failed", err);
+      if (this._unsub === attempt) {
+        this._unsub = undefined;
+        this._subscribedEntity = undefined;
+      }
       return () => undefined;
     });
+    this._unsub = attempt;
   }
 
   private _unsubscribe(): void {
@@ -175,9 +183,7 @@ export class ListAppListCard extends LitElement {
       return;
     }
     this._checkedAvailabilityFor = key;
-    if (this._availability === "available") {
-      this._availability = "transient";
-    }
+    this._availability = "transient";
     void this._checkAvailability();
     this._stopAvailabilityTimer();
     this._availabilityTimer = window.setInterval(() => void this._checkAvailability(), AVAILABILITY_RECHECK_MS);
@@ -303,7 +309,7 @@ export class ListAppListCard extends LitElement {
       <div
         class="progress"
         role="progressbar"
-        aria-label="Completed"
+        aria-label=${S.completed}
         aria-valuemin="0"
         aria-valuemax="100"
         aria-valuenow=${pct}
@@ -357,7 +363,7 @@ export class ListAppListCard extends LitElement {
         <div class="state empty">
           <div class="state-icon">${uiIcon("square-check", 23)}</div>
           <h3>${S.emptyTitle}</h3>
-          <p>${view.viewer ? S.emptyBodyViewer : S.emptyBody}</p>
+          <p>${view.viewer ? S.emptyBodyViewer : view.showAdd ? S.emptyBody : S.emptyBodyNoAdd}</p>
         </div>
       `;
     }
@@ -407,7 +413,7 @@ export class ListAppListCard extends LitElement {
     const open = this._menu === menu;
     const label = menu === "active" ? S.active : S.completed;
     return html`
-      <div class="menu-wrap">
+      <div class="menu-wrap" @keydown=${this._menuKeydown}>
         <button
           class="menu-btn"
           aria-haspopup="menu"
@@ -421,7 +427,7 @@ export class ListAppListCard extends LitElement {
         </button>
         ${open
           ? html`
-              <div class="menu" role="menu" @keydown=${this._menuKeydown}>
+              <div class="menu" role="menu">
                 ${menu === "active"
                   ? html`<button role="menuitem" @click=${this._toggleReorder}>
                       ${this._reordering ? S.exitReorder : S.reorder}
@@ -565,8 +571,12 @@ export class ListAppListCard extends LitElement {
     if (!summary || !this.hass || !this._config) {
       return;
     }
-    input.value = "";
-    await createItem(this.hass, this._config.entity, summary);
+    try {
+      await createItem(this.hass, this._config.entity, summary);
+      input.value = "";
+    } catch (err) {
+      console.warn("listapp-list-card: add_item failed", err);
+    }
     input.focus();
   };
 
@@ -614,7 +624,7 @@ export class ListAppListCard extends LitElement {
   };
 
   private _menuKeydown = (ev: KeyboardEvent) => {
-    if (ev.key === "Escape") {
+    if (ev.key === "Escape" && this._menu) {
       const menu = this._menu;
       this._menu = null;
       this.renderRoot.querySelector<HTMLElement>(`.menu-btn[data-menu="${menu}"]`)?.focus();
@@ -741,10 +751,18 @@ export class ListAppListCard extends LitElement {
     if (!this.hass || !this._config || !this._items) {
       return;
     }
+    const previous = this._items;
     const { active, completed } = this._view();
     const { order, previousUid } = previousUidAfterMove(active, uid, newIndex);
     this._items = [...order, ...completed];
-    await moveItem(this.hass, this._config.entity, uid, previousUid);
+    try {
+      await moveItem(this.hass, this._config.entity, uid, previousUid);
+    } catch (err) {
+      console.warn("listapp-list-card: todo/item/move failed", err);
+      if (this._items.length === previous.length && this._items.every((item) => previous.includes(item))) {
+        this._items = previous;
+      }
+    }
   }
 
   // Sizes, weights and spacing follow the quiet-rail design — see docs/card.md#design-fidelity
