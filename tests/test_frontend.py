@@ -47,9 +47,7 @@ async def test_registers_static_path_and_extra_js_once(hass: HomeAssistant) -> N
         assert url.startswith(f"{CARD_URL}?v=")
 
 
-async def test_version_query_tracks_bundle_content(
-    hass: HomeAssistant, tmp_path
-) -> None:
+async def test_version_query_tracks_bundle_content(hass: HomeAssistant, tmp_path) -> None:
     """`?v=` changes when the bundle's bytes change, independent of manifest.json."""
     from pathlib import Path
 
