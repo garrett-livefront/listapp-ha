@@ -71,6 +71,23 @@ export class ListAppListCard extends LitElement {
     this._config = resolveConfig(config);
     this._expanded = false;
     this._reordering = false;
+    this._menu = null;
+    this._closeDialog();
+  }
+
+  // Failed service calls surface through HA's own toast — see docs/card.md#behaviour-mirrors-the-stock-to-do-card
+  private async _call(action: () => Promise<unknown>): Promise<boolean> {
+    try {
+      await action();
+      return true;
+    } catch (err) {
+      console.warn("listapp-list-card: service call failed", err);
+      this.dispatchEvent(
+        new CustomEvent("hass-notification", { bubbles: true, composed: true, detail: { message: S.saveFailed } }),
+      );
+      this.requestUpdate();
+      return false;
+    }
   }
 
   getCardSize(): number {
@@ -198,7 +215,8 @@ export class ListAppListCard extends LitElement {
 
   private async _checkAvailability(): Promise<void> {
     const entity = this._config?.entity;
-    if (!this.hass || !entity) {
+    const key = this._checkedAvailabilityFor;
+    if (!this.hass || !entity || !key) {
       return;
     }
     let availability: Availability;
@@ -212,7 +230,7 @@ export class ListAppListCard extends LitElement {
     } catch {
       availability = classifyAvailability(this._stateObj(), undefined, undefined);
     }
-    if (this._config?.entity === entity) {
+    if (this._config?.entity === entity && this._checkedAvailabilityFor === key) {
       this._availability = availability;
     }
   }
@@ -571,11 +589,9 @@ export class ListAppListCard extends LitElement {
     if (!summary || !this.hass || !this._config) {
       return;
     }
-    try {
-      await createItem(this.hass, this._config.entity, summary);
+    const { hass, _config: config } = this;
+    if (await this._call(() => createItem(hass, config.entity, summary))) {
       input.value = "";
-    } catch (err) {
-      console.warn("listapp-list-card: add_item failed", err);
     }
     input.focus();
   };
@@ -604,7 +620,8 @@ export class ListAppListCard extends LitElement {
     }
     const status =
       item.status === TodoItemStatus.Completed ? TodoItemStatus.NeedsAction : TodoItemStatus.Completed;
-    await setItemStatus(this.hass, this._config.entity, item, status);
+    const { hass, _config: config } = this;
+    await this._call(() => setItemStatus(hass, config.entity, item, status));
   }
 
   private _toggleExpanded = () => {
@@ -650,12 +667,13 @@ export class ListAppListCard extends LitElement {
     const dialog = this._dialog;
     this._closeDialog();
     if (dialog?.kind === "confirm-clear" && this.hass && this._config && dialog.uids.length) {
-      await deleteItems(this.hass, this._config.entity, dialog.uids);
+      const { hass, _config: config } = this;
+      await this._call(() => deleteItems(hass, config.entity, dialog.uids));
     }
   };
 
   private _closeDialog = () => {
-    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog");
+    const dialog = (this.renderRoot as ShadowRoot | undefined)?.querySelector<HTMLDialogElement>("dialog");
     if (dialog?.open) {
       dialog.close();
     }
@@ -667,18 +685,24 @@ export class ListAppListCard extends LitElement {
     const dialog = this._dialog;
     const form = ev.currentTarget as HTMLFormElement;
     const summary = (form.elements.namedItem("summary") as HTMLInputElement).value.trim();
-    this._closeDialog();
     if (dialog?.kind === "edit" && summary && summary !== dialog.item.summary && this.hass && this._config) {
-      await renameItem(this.hass, this._config.entity, dialog.item, summary);
+      const { hass, _config: config } = this;
+      if (!(await this._call(() => renameItem(hass, config.entity, dialog.item, summary)))) {
+        return;
+      }
     }
+    this._closeDialog();
   };
 
   private _deleteFromDialog = async () => {
     const dialog = this._dialog;
-    this._closeDialog();
     if (dialog?.kind === "edit" && this.hass && this._config) {
-      await deleteItems(this.hass, this._config.entity, [dialog.item.uid]);
+      const { hass, _config: config } = this;
+      if (!(await this._call(() => deleteItems(hass, config.entity, [dialog.item.uid])))) {
+        return;
+      }
     }
+    this._closeDialog();
   };
 
   private _signIn = () => {
@@ -754,12 +778,11 @@ export class ListAppListCard extends LitElement {
     const previous = this._items;
     const { active, completed } = this._view();
     const { order, previousUid } = previousUidAfterMove(active, uid, newIndex);
-    this._items = [...order, ...completed];
-    try {
-      await moveItem(this.hass, this._config.entity, uid, previousUid);
-    } catch (err) {
-      console.warn("listapp-list-card: todo/item/move failed", err);
-      if (this._items.length === previous.length && this._items.every((item) => previous.includes(item))) {
+    const optimistic: TodoItem[] = [...order, ...completed];
+    this._items = optimistic;
+    const { hass, _config: config } = this;
+    if (!(await this._call(() => moveItem(hass, config.entity, uid, previousUid)))) {
+      if (this._items === optimistic && this._config === config) {
         this._items = previous;
       }
     }

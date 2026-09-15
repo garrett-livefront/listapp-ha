@@ -98,9 +98,13 @@ stock card (due dates, descriptions and the stock card's display-order option ar
   rename calls `todo.update_item` with `rename`; delete and "Clear completed" call
   `todo.remove_item` with a list of uids; reorder calls the websocket `todo/item/move` with
   `previous_uid` (`undefined` for "move to top"), after an optimistic local reorder that is rolled
-  back if the call rejects (unless a subscription update has replaced the items meanwhile). A
-  rejected `add_item` leaves the typed text in the field so it can be retried; a failed
-  `todo/item/subscribe` clears the subscription state so the next `hass` update retries it.
+  back if the call rejects (unless a subscription update has replaced the items meanwhile).
+- Every service call goes through `_call`, which on rejection fires HA's `hass-notification` event
+  (the same toast the stock card gets from `showToast`) with "Listapp couldn't save that change.
+  Try again." and re-renders so a checkbox snaps back to the real state. A rejected `add_item`
+  leaves the typed text in the field, a rejected rename or delete keeps the dialog open, and a
+  failed `todo/item/subscribe` clears the subscription state so the next `hass` update retries it
+  (Copilot review comments on PR #14).
 - `unknown` is treated like `unavailable`.
 - Menus are exactly the stock card's: the Active section's ⋯ offers "Reorder items" / "Done
   reordering" only when the entity supports `MOVE_TODO_ITEM`; the Completed section's ⋯ offers
