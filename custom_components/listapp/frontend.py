@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from pathlib import Path
 
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant
-from homeassistant.loader import async_get_integration
 
 from .const import DOMAIN
 
@@ -16,6 +16,16 @@ CARD_URL = f"{URL_BASE}/{CARD_FILENAME}"
 
 _REGISTERED = "frontend_registered"
 _REGISTER_LOCK = "frontend_register_lock"
+
+
+def _bundle_hash(path: Path) -> str:
+    """Short content hash for cache-busting — see docs/card.md#cache-busting.
+
+    Keyed to the bundle's own bytes rather than the integration version, so a
+    slice that changes the card without bumping `manifest.json` still busts
+    the long-lived cache header instead of serving the previous bundle.
+    """
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
 
 
 async def async_register_frontend(hass: HomeAssistant) -> None:
@@ -32,10 +42,9 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
         if domain_data.get(_REGISTERED):
             return
 
-        integration = await async_get_integration(hass, DOMAIN)
         path = Path(__file__).parent / "frontend" / CARD_FILENAME
         await hass.http.async_register_static_paths(
             [StaticPathConfig(CARD_URL, str(path), cache_headers=True)]
         )
-        add_extra_js_url(hass, f"{CARD_URL}?v={integration.version}")
+        add_extra_js_url(hass, f"{CARD_URL}?v={_bundle_hash(path)}")
         domain_data[_REGISTERED] = True

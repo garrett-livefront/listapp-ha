@@ -128,6 +128,8 @@ export class ListAppListCard extends LitElement {
     this._resize?.disconnect();
     document.removeEventListener("click", this._onDocumentClick);
     this._stopAvailabilityTimer();
+    // Clear the guard so reconnecting re-runs tracking instead of finding a stale match.
+    this._checkedAvailabilityFor = undefined;
   }
 
   protected override willUpdate(changed: PropertyValues): void {
@@ -404,7 +406,8 @@ export class ListAppListCard extends LitElement {
                 ${view.canMove ? this._renderMenu("active", view) : nothing}
               </div>
               ${this._renderItems(view.visibleActive, view, true)}
-              ${view.hiddenActive > 0 || (this._expanded && this._config!.collapseTo > 0 && view.active.length > this._config!.collapseTo)
+              ${!this._reordering &&
+              (view.hiddenActive > 0 || (this._expanded && this._config!.collapseTo > 0 && view.active.length > this._config!.collapseTo))
                 ? html`
                     <button class="more" @click=${this._toggleExpanded} aria-expanded=${this._expanded}>
                       ${this._expanded ? S.showLess : S.showMore(view.hiddenActive)}
@@ -620,8 +623,10 @@ export class ListAppListCard extends LitElement {
     if (!item || !this.hass || !this._config) {
       return;
     }
+    // Matches the stock to-do card: only NeedsAction transitions to Completed; Completed and
+    // null (an indeterminate status splitItems still renders as active) both go to NeedsAction.
     const status =
-      item.status === TodoItemStatus.Completed ? TodoItemStatus.NeedsAction : TodoItemStatus.Completed;
+      item.status === TodoItemStatus.NeedsAction ? TodoItemStatus.Completed : TodoItemStatus.NeedsAction;
     const { hass, _config: config } = this;
     const previous = this._items;
     const optimistic = previous?.map((it) => (it.uid === item.uid ? { ...it, status } : it));
@@ -674,11 +679,13 @@ export class ListAppListCard extends LitElement {
 
   private _clearCompleted = async () => {
     const dialog = this._dialog;
-    this._closeDialog();
     if (dialog?.kind === "confirm-clear" && this.hass && this._config && dialog.uids.length) {
       const { hass, _config: config } = this;
-      await this._call(() => deleteItems(hass, config.entity, dialog.uids));
+      if (!(await this._call(() => deleteItems(hass, config.entity, dialog.uids)))) {
+        return;
+      }
     }
+    this._closeDialog();
   };
 
   private _closeDialog = () => {

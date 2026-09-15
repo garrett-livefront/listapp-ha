@@ -9,7 +9,7 @@ from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.listapp.const import DOMAIN
-from custom_components.listapp.frontend import CARD_URL, async_register_frontend
+from custom_components.listapp.frontend import CARD_FILENAME, CARD_URL, async_register_frontend
 
 from .conftest import register_lists
 from .helpers import ACCOUNT_ID, FULL_SCOPE, OTHER_ACCOUNT_ID, groceries
@@ -45,6 +45,33 @@ async def test_registers_static_path_and_extra_js_once(hass: HomeAssistant) -> N
         assert add_extra_js_url.call_count == 1
         url = add_extra_js_url.call_args[0][1]
         assert url.startswith(f"{CARD_URL}?v=")
+
+
+async def test_version_query_tracks_bundle_content(
+    hass: HomeAssistant, tmp_path
+) -> None:
+    """`?v=` changes when the bundle's bytes change, independent of manifest.json."""
+    from pathlib import Path
+
+    bundle = (
+        Path(__file__).parents[1] / "custom_components" / "listapp" / "frontend" / CARD_FILENAME
+    )
+    original = bundle.read_bytes()
+    try:
+        hass.http = AsyncMock()
+        with patch("custom_components.listapp.frontend.add_extra_js_url") as add_extra_js_url:
+            await async_register_frontend(hass)
+            first_url = add_extra_js_url.call_args[0][1]
+
+        bundle.write_bytes(original + b"\n// touched for test")
+        hass.data[DOMAIN]["frontend_registered"] = False
+        with patch("custom_components.listapp.frontend.add_extra_js_url") as add_extra_js_url:
+            await async_register_frontend(hass)
+            second_url = add_extra_js_url.call_args[0][1]
+
+        assert first_url != second_url
+    finally:
+        bundle.write_bytes(original)
 
 
 async def test_concurrent_calls_register_exactly_once(hass: HomeAssistant) -> None:

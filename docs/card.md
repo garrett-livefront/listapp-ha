@@ -8,6 +8,10 @@ repository or manual resource add. Plan and decisions:
 Slice 1 (`card-data-registration`) shipped the attribute contract and delivery. Slice 2 (`card-ui`)
 is the card itself. Slice 3 adds the visual editor; slice 4 the README section and screenshots.
 
+All card-facing strings (the picker name/description, dialogs, empty and error states) use
+"Listapp" — the in-product brand casing — even where the integration's own docs and translations
+say "ListApp" (Copilot review comment on PR #14).
+
 ## Attribute contract
 
 Each `todo.listapp_<list>` entity exposes on `extra_state_attributes`:
@@ -49,12 +53,15 @@ both pass the flag check before either has registered (Copilot review comment on
   serve a bundled file without a separate static file server.
 - `homeassistant.components.frontend.add_extra_js_url` registers it as a global frontend resource,
   so every dashboard loads it automatically — the user never adds a Lovelace resource by hand.
-- The URL carries `?v=<manifest version>` for cache busting: `add_extra_js_url` is called with the
-  integration's `manifest.json` version (via `loader.async_get_integration`), so a HACS update that
-  bumps the version invalidates any cached copy of the JS in the browser. `StaticPathConfig` is
-  registered with `cache_headers=True` — the versioned URL, not a no-cache header, is what
-  invalidates the bundle on update, so the static path should cache long-lived like any other
-  bundled asset (Copilot review comment on PR #13).
+- The URL carries `?v=<content hash>` for cache busting, computed once at registration from the
+  bundle file's own bytes (`hashlib.sha256(...).hexdigest()[:12]`), not the integration version.
+  `manifest.json` doesn't move on every slice that touches the card, but a version-keyed URL only
+  invalidates the browser cache when it does — an installation that cached an earlier bundle at
+  `?v=0.1.0` would keep serving it across an upgrade that changes the JS without a version bump.
+  Hashing the bundle ties the URL to what's actually shipped. `StaticPathConfig` is registered with
+  `cache_headers=True` — the versioned URL, not a no-cache header, is what invalidates the bundle on
+  update, so the static path should cache long-lived like any other bundled asset (Copilot review
+  comment on PR #13; the hash-vs-version-bump choice is a Copilot review comment on PR #14).
 - `manifest.json` depends on `frontend` and `http` (previously just `auth`), since both must be set
   up before `async_register_frontend` runs.
 
@@ -322,7 +329,7 @@ component's own pinned requirement) — see `requirements_test.txt` and `test.ym
 matrix, which pins the same package to the version the 2026.3 plugin's `frontend` component
 requires.
 
-Card unit tests (`frontend/test/`, 84 cases): state derivation and priorities, collapse, viewer
+Card unit tests (`frontend/test/`, 86 cases): state derivation and priorities, collapse, viewer
 gating, option defaults and validation, the `avatarColor` vectors, glyph/ink contrast over all 14
 colours, icon key mapping, availability classification, and move → `previous_uid`.
 
