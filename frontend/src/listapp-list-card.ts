@@ -51,7 +51,7 @@ export class ListAppListCard extends LitElement {
   ): ListAppCardConfig {
     // The Lovelace card picker calls this with only `hass` — see docs/card.md#stub-config.
     const candidates = entities.length || fallback.length ? [...entities, ...fallback] : Object.keys(hass.states);
-    return stubConfig(candidates);
+    return stubConfig(candidates, hass.states);
   }
 
   static getConfigElement(): HTMLElement {
