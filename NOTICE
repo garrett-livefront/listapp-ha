@@ -1,0 +1,37 @@
+ListApp for Home Assistant
+Copyright (c) 2026 Garrett Schafer
+
+This repository is licensed under the terms in LICENSE. The bundled Lovelace card
+(custom_components/listapp/frontend/listapp-list-card.js, built from frontend/) includes or
+adapts third-party work:
+
+Home Assistant frontend — Apache License 2.0
+  https://github.com/home-assistant/frontend
+  frontend/src/listapp-list-card.ts and frontend/src/ha.ts adapt the behaviour, service calls,
+  websocket messages and interaction model of src/panels/lovelace/cards/hui-todo-list-card.ts and
+  src/data/todo.ts. No large verbatim passages are reproduced; the structure and semantics are
+  derived from those files.
+
+Lit — BSD 3-Clause License
+  Copyright (c) 2017 Google LLC. https://github.com/lit/lit
+  Bundled in full into the card.
+
+Lucide — ISC License
+  Copyright (c) 2026 Lucide Icons and Contributors. https://lucide.dev
+  frontend/src/icons.generated.ts contains SVG path data for 40 icons, generated from the lucide
+  npm package by frontend/scripts/gen-icons.mjs. The icons dollar-sign, music, plus, check, x,
+  chevron-down, chevron-up, arrow-up, arrow-down, trash, and shopping-bag are derived by Lucide from
+  the Feather project (MIT, Copyright (c) 2013-present Cole Bemis).
+
+  ISC License text:
+  Permission to use, copy, modify, and/or distribute this software for any purpose with or without
+  fee is hereby granted, provided that the above copyright notice and this permission notice appear
+  in all copies. THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+  REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO
+  EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR
+  ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF
+  CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+  PERFORMANCE OF THIS SOFTWARE.
+
+The avatarColor() function in frontend/src/color.ts is a port of lib/avatar.ts from the ListApp
+mobile app (same author).

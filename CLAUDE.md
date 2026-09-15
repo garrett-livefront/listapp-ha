@@ -27,6 +27,11 @@ https://forge.radhangs.com/listapp-ha-integration-plan-b2h9rr/
 OAuth (public PKCE client registered in code), the todo entities, and API error mapping: see
 [`docs/architecture.md`](docs/architecture.md).
 
+## Card
+
+The bundled Lovelace card (source in `frontend/`, built bundle committed under
+`custom_components/listapp/frontend/`): see [`docs/card.md`](docs/card.md).
+
 ## Testing
 
 pytest + ruff, gated in CI. See [`docs/testing.md`](docs/testing.md) for how to run locally and why

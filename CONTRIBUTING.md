@@ -44,10 +44,27 @@ python3.14 -m venv .venv
 
 Details, the coverage gate, and the supported-HA-version matrix: [`docs/testing.md`](docs/testing.md).
 
+## The card
+
+The Lovelace card's source is in `frontend/` (Lit + TypeScript); the built bundle at
+`custom_components/listapp/frontend/listapp-list-card.js` is committed, so **rebuild and commit it
+with any source change** — CI fails if the two drift.
+
+```
+cd frontend
+npm ci
+npm run build                                   # → ../custom_components/listapp/frontend/listapp-list-card.js
+npm run lint && npm run typecheck && npm test
+npm run check:fresh                             # what CI runs: rebuild must match the committed file
+npm run dev                                     # harness with a mock hass at http://127.0.0.1:8000/
+```
+
+Architecture, options, states, the colour/icon rules and licences: [`docs/card.md`](docs/card.md).
+
 ## CI
 
-`.github/workflows/test.yml`, `lint.yml`, and `validate.yml` (`hassfest` + HACS validation) run on
-every pull request.
+`.github/workflows/test.yml`, `lint.yml`, `validate.yml` (`hassfest` + HACS validation) and
+`card.yml` (card lint, typecheck, tests, bundle freshness) run on every pull request.
 
 ## Architecture
 
