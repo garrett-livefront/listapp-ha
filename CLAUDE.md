@@ -21,3 +21,13 @@ https://forge.radhangs.com/listapp-ha-integration-plan-b2h9rr/
 
 - `custom_components/listapp/` — the integration
 - `hacs.json` — HACS metadata
+
+## Architecture
+
+OAuth (public PKCE client registered in code), the todo entities, and API error mapping: see
+[`docs/architecture.md`](docs/architecture.md).
+
+## Testing
+
+pytest + ruff, gated in CI. See [`docs/testing.md`](docs/testing.md) for how to run locally and why
+the coverage threshold is set where it is.
