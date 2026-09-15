@@ -66,6 +66,20 @@ describe("toFormData / fromFormData round trip", () => {
     const config = fromFormData({ ...toFormData({ type: "x", entity: "todo.a" }), title: "   " }, "x");
     expect(config.title).toBeUndefined();
   });
+
+  it("treats an undefined title (ha-form clearing the field) as blank", () => {
+    const data = { ...toFormData({ type: "x", entity: "todo.a" }), title: undefined as unknown as string };
+    expect(() => fromFormData(data, "x")).not.toThrow();
+    expect(fromFormData(data, "x").title).toBeUndefined();
+  });
+
+  it("normalizes an out-of-range collapse_to from ha-form's number selector", () => {
+    const base = toFormData({ type: "x", entity: "todo.a" });
+    expect(fromFormData({ ...base, collapse_to: undefined as unknown as number }, "x").collapse_to).toBeUndefined();
+    expect(fromFormData({ ...base, collapse_to: -1 }, "x").collapse_to).toBeUndefined();
+    expect(fromFormData({ ...base, collapse_to: 1.5 }, "x").collapse_to).toBeUndefined();
+    expect(fromFormData({ ...base, collapse_to: 3 }, "x").collapse_to).toBe(3);
+  });
 });
 
 function hass(entity = "todo.groceries"): HomeAssistant {

@@ -57,15 +57,21 @@ export function toFormData(config: ListAppCardConfig): FormData {
 // Only non-default values survive, matching stock editors' clean-YAML behaviour.
 export function fromFormData(data: FormData, type: string): ListAppCardConfig {
   const config: ListAppCardConfig = { type, entity: data.entity };
-  if (data.title.trim()) {
-    config.title = data.title.trim();
+  const title = typeof data.title === "string" ? data.title.trim() : "";
+  if (title) {
+    config.title = title;
   }
   if (data.use_list_color !== DEFAULTS.use_list_color) config.use_list_color = data.use_list_color;
   if (data.show_title !== DEFAULTS.show_title) config.show_title = data.show_title;
   if (data.show_add !== DEFAULTS.show_add) config.show_add = data.show_add;
   if (data.show_completed !== DEFAULTS.show_completed) config.show_completed = data.show_completed;
   if (data.show_progress !== DEFAULTS.show_progress) config.show_progress = data.show_progress;
-  if (data.collapse_to !== DEFAULTS.collapse_to) config.collapse_to = data.collapse_to;
+  // ha-form's number selector can emit undefined (cleared) or a negative/fractional value.
+  const collapseTo =
+    typeof data.collapse_to === "number" && Number.isInteger(data.collapse_to) && data.collapse_to >= 0
+      ? data.collapse_to
+      : DEFAULTS.collapse_to;
+  if (collapseTo !== DEFAULTS.collapse_to) config.collapse_to = collapseTo;
   if (data.item_tap_action !== DEFAULTS.item_tap_action) config.item_tap_action = data.item_tap_action;
   return config;
 }
