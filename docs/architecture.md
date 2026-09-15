@@ -48,7 +48,8 @@ https://forge.radhangs.com/listapp-ha-integration-plan-b2h9rr/
 
 There's deliberately no user-facing URL field: this integration talks to one service. For local
 development, the environment variables `LISTAPP_API_BASE_URL` and `LISTAPP_OAUTH_BASE_URL`
-override both, and they're read when the integration module is imported. See the README.
+override both, and they're read when the integration module is imported. See
+[`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ## Entities
 

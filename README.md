@@ -1,5 +1,12 @@
 # ListApp for Home Assistant
 
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
+[![GitHub release](https://img.shields.io/github/v/release/garrett-livefront/listapp-ha)](https://github.com/garrett-livefront/listapp-ha/releases)
+[![Validate](https://github.com/garrett-livefront/listapp-ha/actions/workflows/validate.yml/badge.svg)](https://github.com/garrett-livefront/listapp-ha/actions/workflows/validate.yml)
+[![Test](https://github.com/garrett-livefront/listapp-ha/actions/workflows/test.yml/badge.svg)](https://github.com/garrett-livefront/listapp-ha/actions/workflows/test.yml)
+[![Minimum Home Assistant version](https://img.shields.io/badge/Home%20Assistant-2026.3.0%2B-41BDF5.svg)](https://www.home-assistant.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/garrett-livefront/listapp-ha/blob/main/LICENSE)
+
 A Home Assistant custom integration that links a ListApp account and exposes its lists as
 `todo` entities, updated live as they change.
 
@@ -14,53 +21,71 @@ A Home Assistant custom integration that links a ListApp account and exposes its
 ## Requirements
 
 - Home Assistant 2026.3.0 or newer (see `hacs.json`; CI also tests against this minimum, see
-  `docs/testing.md`).
-- [my.home-assistant.io](https://my.home-assistant.io/) configured with your Home Assistant URL,
-  so Google/Apple sign-in can redirect back to your instance.
+  [`docs/testing.md`](https://github.com/garrett-livefront/listapp-ha/blob/main/docs/testing.md)).
+- The **My Home Assistant** integration enabled (it's part of `default_config`, so most installs
+  already have it; if you've removed `default_config`, add `my:` to `configuration.yaml`). Signing
+  in needs it to redirect back to your instance.
+- A ListApp account.
 
 ## Installation
 
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=garrett-livefront&repository=listapp-ha&category=integration)
+
 This repository is not yet in the HACS default store — add it as a custom repository:
 
-1. HACS → **⋮** (top right) → **Custom repositories**.
-2. Repository: `https://github.com/garrett-livefront/listapp-ha`, category **Integration**.
-3. Install **ListApp**, then restart Home Assistant.
-4. **Settings → Devices & services → Add integration → ListApp**, then sign in with Google or
-   Apple in the browser window that opens and pick the lists to add.
+1. Use the button above, or HACS → **⋮** (top right) → **Custom repositories**, repository
+   `https://github.com/garrett-livefront/listapp-ha`, category **Integration**.
+2. Install **ListApp**, then restart Home Assistant.
 
-## Local development
+[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=listapp)
 
-To try the integration before it's on HACS:
+3. Use the button above, or **Settings → Devices & services → Add integration → ListApp**, then
+   sign in with Google or Apple in the browser window that opens and pick the lists to add.
 
-1. Copy `custom_components/listapp` into your Home Assistant config directory's
-   `custom_components/` folder.
-2. Restart Home Assistant.
-3. **Settings → Devices & services → Add integration → ListApp**, then sign in to ListApp in the
-   browser window that opens.
+The first time you sign in (or click a My Home Assistant button), my.home-assistant.io asks for
+your Home Assistant URL and remembers it in that browser — use one reachable from the browser
+you're signing in with.
 
-Each ListApp list shows up as a `todo.listapp_<list>` entity. **Configure** on the integration
-offers read-only mode, which asks you to sign in again with narrower permissions.
+## What data is shared
 
-### Linking against a local API and Hydra
+Signing in grants this integration OAuth scopes to read and write your ListApp lists
+(`lists:read`, plus `lists:write` unless you choose read-only mode) and `offline_access` so it can
+refresh your session without asking you to sign in again. It also reads your account ID and email
+to identify the connection — no other account information.
 
-1. In `listapp-api`, start Hydra and register the client (see its `docs/oauth.md`, "Local setup"):
-   `docker compose --profile oauth up -d`, then `./scripts/oauth/register-ha-client.sh`, and run
-   the API.
-2. Point the integration at them with environment variables in the environment Home Assistant
-   runs in. They're read when the integration loads, so restart after changing them:
+Removing the integration from Home Assistant stops it from being used locally, but does not revoke
+the underlying access grant on ListApp's server. To fully revoke access, use the ListApp app's
+Connected apps screen (coming soon).
 
-   ```bash
-   export LISTAPP_API_BASE_URL=http://localhost:8080/api/v1
-   export LISTAPP_OAUTH_BASE_URL=http://localhost:4444
-   ```
+## Troubleshooting
 
-   Use your API's actual port. From a Home Assistant container, `localhost` is the container, so
-   use the host's address instead.
-3. Add the integration as above. The authorize page opens in your browser against local Hydra,
-   and Hydra redirects to `my.home-assistant.io`, which needs your Home Assistant URL set there.
+- **Reauthentication required**: Home Assistant asks you to sign in again when ListApp refuses to
+  refresh your session or rejects an API request as unauthenticated (your grant expired or was
+  revoked), or when you change read-only mode in **Configure** — the previous grant no longer
+  matches. Signing in again restores it. A transient network or server error on a list refresh
+  does not trigger this — it shows the integration as unavailable and retries instead; a dropped
+  live-updates connection falls back to polling without affecting entity availability.
+- **Linking gets stuck or errors after signing in**: check that the **My Home Assistant**
+  integration is enabled (see Requirements) and that the URL saved for your browser at
+  [my.home-assistant.io](https://my.home-assistant.io/) is correct.
+- **Debug logging**: add to `configuration.yaml` and restart, then check the logs:
 
-How auth, entities, and errors work: [`docs/architecture.md`](docs/architecture.md).
+  ```yaml
+  logger:
+    logs:
+      custom_components.listapp: debug
+  ```
+
+### Reporting issues
+
+Open an issue: <https://github.com/garrett-livefront/listapp-ha/issues>.
+
+## Contributing
+
+Want to help? See
+[CONTRIBUTING.md](https://github.com/garrett-livefront/listapp-ha/blob/main/CONTRIBUTING.md).
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see
+[LICENSE](https://github.com/garrett-livefront/listapp-ha/blob/main/LICENSE).

@@ -1,5 +1,7 @@
 # Testing
 
+See [`CONTRIBUTING.md`](../CONTRIBUTING.md) for local dev setup. Details below.
+
 ## Running locally
 
 ```
