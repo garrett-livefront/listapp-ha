@@ -43,6 +43,10 @@ class _Retryable(Exception):
     pass
 
 
+class _SelectionEmpty(Exception):
+    pass
+
+
 async def parse_sse(content: StreamReader) -> AsyncIterator[StreamEvent]:
     """Parse an SSE byte stream into events, per the spec's field/dispatch rules."""
     event_type = "message"
@@ -128,10 +132,16 @@ class ListAppEventStream:
                 )
                 self._on_selection_rejected()
                 return
+            except _SelectionEmpty:
+                # Selection can only shrink at runtime; growing it reloads the entry.
+                _LOGGER.debug("ListApp live update stream has no lists selected; stopping")
+                return
             except (ClientError, TimeoutError, _Retryable) as err:
                 _LOGGER.debug("ListApp live update stream disconnected: %s", err)
             except Exception as err:
-                _LOGGER.warning("ListApp live update stream hit an unexpected error: %s", err)
+                _LOGGER.warning(
+                    "ListApp live update stream hit an unexpected error: %s", err, exc_info=err
+                )
             finally:
                 self._on_state_change(False)
             if self._connected:
@@ -141,6 +151,9 @@ class ListAppEventStream:
             backoff = min(backoff * 2, STREAM_BACKOFF_MAX_SECONDS)
 
     async def _connect_and_read(self) -> None:
+        list_ids = self._get_list_ids()
+        if not list_ids:
+            raise _SelectionEmpty
         try:
             token = await self._get_access_token()
         except ListAppAuthError as err:
@@ -151,7 +164,7 @@ class ListAppEventStream:
             total=None, connect=REQUEST_TIMEOUT_SECONDS, sock_read=self._heartbeat_timeout
         )
         # Read per connect, so a list removed mid-stream isn't resent on reconnect.
-        url = f"{self._base_url}/me/events/selected?lists={','.join(self._get_list_ids())}"
+        url = f"{self._base_url}/me/events/selected?lists={','.join(list_ids)}"
         async with self._session.get(
             url,
             headers={hdrs.AUTHORIZATION: f"Bearer {token}"},

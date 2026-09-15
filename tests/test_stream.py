@@ -126,6 +126,23 @@ async def test_reconnect_uses_current_selection(
     assert queries[-1] == "a"
 
 
+async def test_empty_selection_stops_without_request(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, caplog
+) -> None:
+    states: list[bool] = []
+    stream = _stream(hass, get_list_ids=lambda: [], on_state_change=states.append)
+
+    with caplog.at_level("DEBUG"):
+        stream.start()
+        await asyncio.sleep(0.05)
+        assert stream._task is not None and stream._task.done()
+    await stream.stop()
+
+    assert not aioclient_mock.mock_calls
+    assert states == [False]
+    assert not any(record.levelname == "ERROR" for record in caplog.records)
+
+
 async def test_401_triggers_auth_failed(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:
@@ -312,7 +329,9 @@ async def test_unexpected_exception_logs_warning_and_reconnects(
         await stream.stop()
 
     assert calls >= 2
-    assert any("unexpected error" in message for message in caplog.messages)
+    warnings = [r for r in caplog.records if "unexpected error" in r.message]
+    assert warnings
+    assert warnings[0].exc_info is not None
 
 
 async def test_start_uses_entry_background_task(hass: HomeAssistant) -> None:

@@ -171,6 +171,12 @@ stream, and the server would answer the empty `lists=` with a 400 that logs as a
   `_active_ids`, not fixed at construction. A list dropped mid-stream (deleted, revoked, 404) would
   otherwise be resent on reconnect, and the server's `400` for it stops the stream for every other
   list until a reload. (Copilot review comment on PR #4, round 3.)
+- **A selection that empties at runtime stops the loop quietly instead of connecting.** At runtime
+  the selection can only shrink (`list.deleted`, `member.deleted`, a 404 on poll) — growing it goes
+  through the options flow, which reloads the entry and starts a fresh stream — so there's no
+  scenario where an empty selection here is transient. Connecting anyway would just draw the same
+  server `400` as an over-full selection, but logged as an error on every reconnect instead of once.
+  (Copilot review on PR #6.)
 - **Connect timeout** is `REQUEST_TIMEOUT_SECONDS`, separate from the read timeout, so a stalled
   DNS lookup or TCP connect enters backoff instead of hanging the task.
 

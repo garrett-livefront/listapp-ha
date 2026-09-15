@@ -5,6 +5,7 @@ from dataclasses import replace
 import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.listapp.const import (
     API_BASE_URL,
@@ -168,6 +169,30 @@ async def test_list_deleted_removes_list(
     assert GROCERIES_ID not in coordinator._active_ids
 
 
+async def test_stream_stops_quietly_when_selection_empties(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    mock_api: AiohttpClientMocker,
+    caplog,
+) -> None:
+    # The stream is already running with STREAM_BACKOFF_INITIAL_SECONDS (1s) captured at
+    # start, so this waits out a real reconnect cycle rather than patching the backoff.
+    coordinator = setup_integration.runtime_data
+    calls_before = len(mock_api.mock_calls)
+
+    await _emit(coordinator, "list.deleted", GROCERIES_ID, deleted_ref(GROCERIES_ID))
+    with caplog.at_level("DEBUG"):
+        await asyncio.sleep(1.6)
+
+    assert coordinator._active_ids == set()
+    stream_calls = [
+        call for call in mock_api.mock_calls[calls_before:] if "events/selected" in str(call[1])
+    ]
+    assert stream_calls == []
+    assert not any(record.levelname == "ERROR" for record in caplog.records)
+    assert coordinator._stream._task is not None and coordinator._stream._task.done()
+
+
 async def test_member_deleted_for_self_removes_list(
     hass: HomeAssistant, setup_integration: MockConfigEntry
 ) -> None:
@@ -191,6 +216,26 @@ async def test_member_deleted_for_other_user_ignored(
     await asyncio.sleep(0.6)
 
     assert GROCERIES_ID in coordinator.data
+
+
+async def test_stream_stops_quietly_when_last_member_removed(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    mock_api: AiohttpClientMocker,
+) -> None:
+    coordinator = setup_integration.runtime_data
+    calls_before = len(mock_api.mock_calls)
+
+    await _emit(
+        coordinator, "member.deleted", GROCERIES_ID, member_deleted_ref(MEMBERSHIP_ID, ACCOUNT_ID)
+    )
+    await asyncio.sleep(1.6)
+
+    assert coordinator._active_ids == set()
+    stream_calls = [
+        call for call in mock_api.mock_calls[calls_before:] if "events/selected" in str(call[1])
+    ]
+    assert stream_calls == []
 
 
 async def test_unknown_event_type_ignored(
