@@ -49,9 +49,13 @@ you're signing in with.
 ## What data is shared
 
 Signing in grants this integration OAuth scopes to read and write your ListApp lists
-(`lists:read`, plus `lists:write` unless you choose read-only mode) — nothing else about your
-account. Revoke access from the ListApp app's Connected apps screen (coming soon) or by removing
-the integration from Home Assistant.
+(`lists:read`, plus `lists:write` unless you choose read-only mode) and `offline_access` so it can
+refresh your session without asking you to sign in again. It also reads your account ID and email
+to identify the connection — nothing else about your account.
+
+Removing the integration from Home Assistant stops it from being used locally, but does not revoke
+the underlying access grant on ListApp's server. To fully revoke access, use the ListApp app's
+Connected apps screen (coming soon).
 
 ## Troubleshooting
 
