@@ -1,0 +1,75 @@
+body {
+  margin: 0;
+  font-family: Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #e5e5e5;
+}
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  padding: 10px 16px;
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+  font-size: 14px;
+}
+main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.theme {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.theme.light {
+  background: #fafafa;
+  color-scheme: light;
+  --primary-background-color: #fafafa;
+  --card-background-color: #ffffff;
+  --primary-text-color: #212121;
+  --secondary-text-color: #727272;
+  --divider-color: rgba(0, 0, 0, 0.12);
+  --primary-color: #03a9f4;
+  --error-color: #db4437;
+  --warning-color: #ffa600;
+  --ha-card-border-radius: 12px;
+  --ha-card-box-shadow: none;
+}
+.theme.dark {
+  background: #111111;
+  color-scheme: dark;
+  --primary-background-color: #111111;
+  --card-background-color: #1c1c1c;
+  --primary-text-color: #e1e1e1;
+  --secondary-text-color: #9b9b9b;
+  --divider-color: rgba(255, 255, 255, 0.12);
+  --primary-color: #03a9f4;
+  --error-color: #db4437;
+  --warning-color: #ffa600;
+  --ha-card-border-radius: 12px;
+  --ha-card-box-shadow: none;
+}
+.scenario h4 {
+  margin: 0 0 8px;
+  font: 12px/1.4 monospace;
+  color: var(--secondary-text-color);
+}
+.scenario pre {
+  margin: 0 0 8px;
+  font: 11px/1.4 monospace;
+  color: var(--secondary-text-color);
+  white-space: pre-wrap;
+}
+.frame {
+  width: var(--w, 400px);
+  max-width: 100%;
+}
+ha-card {
+  display: block;
+  background: var(--card-background-color);
+  border-radius: var(--ha-card-border-radius);
+  border: 1px solid var(--divider-color);
+  color: var(--primary-text-color);
+}
