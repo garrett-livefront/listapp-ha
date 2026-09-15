@@ -143,7 +143,13 @@ export class ListAppListCard extends LitElement {
     if (!this.hass || !this._config) {
       return;
     }
-    if (this._subscribedEntity !== this._config.entity || (!this._unsub && this._config.entity in this.hass.states)) {
+    const entityPresent = this._config.entity in this.hass.states;
+    if (this._subscribedEntity && !entityPresent) {
+      // The entity vanished (e.g. the config entry reloaded) — drop the stale subscription so a
+      // later recreation under the same ID is treated as fresh, not skipped as already-subscribed.
+      this._unsubscribe();
+      this._items = undefined;
+    } else if (this._subscribedEntity !== this._config.entity || (!this._unsub && entityPresent)) {
       this._items = undefined;
       this._subscribe();
     }
@@ -407,6 +413,7 @@ export class ListAppListCard extends LitElement {
               <div class="state-icon done">${uiIcon("check", 24)}</div>
               <h3>${S.allDoneTitle}</h3>
               <p>${view.showCompleted ? S.allDoneBody : S.allDoneHidden(view.done)}</p>
+              ${!view.showCompleted && view.canDelete ? this._renderMenu("completed", view) : nothing}
             </div>
           `
         : html`
@@ -653,15 +660,22 @@ export class ListAppListCard extends LitElement {
   };
 
   private _toggleMenu = (ev: Event) => {
-    ev.stopPropagation();
     const menu = (ev.currentTarget as HTMLElement).dataset.menu as Menu;
     this._menu = this._menu === menu ? null : menu;
   };
 
-  private _onDocumentClick = () => {
-    if (this._menu) {
-      this._menu = null;
+  // Deliberately doesn't stopPropagation in _toggleMenu — that would keep the click from
+  // reaching other cards' own document listeners, leaving their menus open. Instead this
+  // ignores clicks on this card's own menu buttons, which _toggleMenu already handled.
+  private _onDocumentClick = (ev: Event) => {
+    if (!this._menu) {
+      return;
     }
+    const path = ev.composedPath();
+    if (path.some((el) => el instanceof HTMLElement && el.classList.contains("menu-btn") && el.getRootNode() === this.renderRoot)) {
+      return;
+    }
+    this._menu = null;
   };
 
   private _menuKeydown = (ev: KeyboardEvent) => {

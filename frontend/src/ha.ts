@@ -73,8 +73,16 @@ export const setItemStatus = (
   status: TodoItemStatus,
 ) => hass.callService("todo", "update_item", { item: item.uid, status }, { entity_id: entityId });
 
+// Status must ride along: an omitted `status` maps to needs_action server-side
+// (todo.py's async_update_todo_item), so a rename-only call would reopen a
+// completed item — see docs/card.md.
 export const renameItem = (hass: HomeAssistant, entityId: string, item: TodoItem, summary: string) =>
-  hass.callService("todo", "update_item", { item: item.uid, rename: summary }, { entity_id: entityId });
+  hass.callService(
+    "todo",
+    "update_item",
+    { item: item.uid, rename: summary, status: item.status ?? TodoItemStatus.NeedsAction },
+    { entity_id: entityId },
+  );
 
 export const deleteItems = (hass: HomeAssistant, entityId: string, uids: string[]) =>
   hass.callService("todo", "remove_item", { item: uids }, { entity_id: entityId });

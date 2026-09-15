@@ -228,9 +228,10 @@ From the accent, `color.ts#buildPalette` derives:
   `#22c55e`, teal `#14b8a6`, cyan `#06b6d4`, sky `#0ea5e9` and orange `#f97316` — so those eight
   get a dark glyph. This is a deliberate departure from the design's "white glyph" and is tested.
 - **ink** — accent-coloured text and icons on the card background ("Show N more", the +, links).
-  Dark themes lighten the accent by 38 % as the design does. Light themes darken it in 12 % steps
-  until it reaches 4.5:1 against `--card-background-color` (or reaches black), which for the app's
-  palette only affects the light accents above (yellow becomes an olive, lime a moss green).
+  Dark themes lighten the accent by 38 % as the design does. Light themes darken any accent that
+  doesn't already reach 4.5:1 against `--card-background-color`, in 12 % steps until it does (or
+  reaches black) — not just the light accents above; `#3b82f6`, for instance, is also below 4.5:1
+  on white and gets darkened the same way (Copilot review comment on PR #14).
 - **tint** — the accent at 18 % alpha (dark) or 10 % (light) for the empty-state tile.
 - **field / hover / track** — the neutral surfaces the design draws as fixed greys (add field
   background, row and menu hover, progress track). They are translucent black or white at the
@@ -334,9 +335,12 @@ component's own pinned requirement) — see `requirements_test.txt` and `test.ym
 matrix, which pins the same package to the version the 2026.3 plugin's `frontend` component
 requires.
 
-Card unit tests (`frontend/test/`, 86 cases): state derivation and priorities, collapse, viewer
+Card unit tests (`frontend/test/`, 88 cases): state derivation and priorities, collapse, viewer
 gating, option defaults and validation, the `avatarColor` vectors, glyph/ink contrast over all 14
-colours, icon key mapping, availability classification, and move → `previous_uid`.
+colours, icon key mapping, availability classification, move → `previous_uid`, and rename preserving
+status. These cover the DOM-free model/config/colour/icon/service-call helpers only — there is no
+automated harness that instantiates `ListAppListCard` itself; `frontend/dev/harness.js` is a manual
+visual check, not run in CI (Copilot review comment on PR #14, flagged to Garrett).
 
 ## Open questions
 
