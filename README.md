@@ -21,7 +21,7 @@ A Home Assistant custom integration that links a ListApp account and exposes its
 ## Requirements
 
 - Home Assistant 2026.3.0 or newer (see `hacs.json`; CI also tests against this minimum, see
-  `docs/testing.md`).
+  [`docs/testing.md`](https://github.com/garrett-livefront/listapp-ha/blob/main/docs/testing.md)).
 - The **My Home Assistant** integration enabled (it's part of `default_config`, so most installs
   already have it; if you've removed `default_config`, add `my:` to `configuration.yaml`). Signing
   in needs it to redirect back to your instance.
