@@ -197,6 +197,12 @@ The unavailable layouts replace the header entirely (the design's choice), so th
 starts the reauth flow itself (`ConfigEntryAuthFailed` and `todo.py`'s `_async_write`), so the flow
 check is the authoritative signal.
 
+**Known gap:** `config_entries/flow/progress` is admin-only. For a non-admin dashboard user the
+`Promise.all` in `_checkAvailability` rejects and the catch path classifies every unavailable entity
+as transient, so that user never sees the auth/Sign-in state even during a real reauth (Copilot
+review comment on PR #14, flagged to Garrett — not fixed in this PR). Needs a user-readable signal
+or an admin-only fallback that degrades more specifically than "assume transient".
+
 **Sign in** and **Check integration** both navigate to `/config/integrations/integration/listapp`
 via `history.pushState` + a `location-changed` event — the same mechanism HA's own `navigate()`
 uses. That page shows the "Reconfigure"/reauth banner for the entry, which is what HA does for any

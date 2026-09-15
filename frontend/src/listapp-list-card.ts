@@ -112,7 +112,12 @@ export class ListAppListCard extends LitElement {
     const columns = this._wide ? 2 : 1;
     const completedRows = view.showCompleted && !this._reordering ? view.completed.length : 0;
     const rows = Math.ceil(view.visibleActive.length / columns) + Math.ceil(completedRows / columns);
-    return 2 + (view.showAdd ? 1 : 0) + rows + 1;
+    const loading = view.state === "loading";
+    // Mirror render()'s conditions: the progress bar is skipped when show_progress is off or
+    // still loading, and the add form is skipped while loading — see docs/card.md.
+    const header = 1 + (view.showProgress && !loading ? 1 : 0);
+    const add = view.showAdd && !loading ? 1 : 0;
+    return header + add + rows + 1;
   }
 
   getGridOptions() {
@@ -148,14 +153,19 @@ export class ListAppListCard extends LitElement {
       return;
     }
     const entityPresent = this._config.entity in this.hass.states;
-    if (this._subscribedEntity && !entityPresent) {
-      // The entity vanished (e.g. the config entry reloaded) — drop the stale subscription so a
-      // later recreation under the same ID is treated as fresh, not skipped as already-subscribed.
+    if (!entityPresent) {
+      // The entity vanished (e.g. the config entry reloaded) — drop the stale subscription,
+      // dialog/menu and cached config-entry ID so a later recreation under the same ID is
+      // treated as fresh, not skipped as already-subscribed or misattributed to the old entry.
+      // Idempotent, so it's safe to run on every update while the entity stays missing (this
+      // also covers a subscription whose own rejection handler already cleared
+      // `_subscribedEntity` before the entity disappeared).
       this._unsubscribe();
       this._items = undefined;
-      // A recreation under the same entity_id can belong to a different config entry.
       this._entryIdFor = undefined;
       this._entryId = undefined;
+      this._closeDialog();
+      this._menu = null;
     } else if (this._subscribedEntity !== this._config.entity || (!this._unsub && entityPresent)) {
       this._items = undefined;
       this._subscribe();
@@ -339,7 +349,7 @@ export class ListAppListCard extends LitElement {
     }
     return html`
       ${this._renderHeader(view, stateObj.attributes.icon)}
-      ${view.showProgress ? this._renderProgress(view) : nothing}
+      ${view.showProgress && view.state !== "loading" ? this._renderProgress(view) : nothing}
       ${this._renderBody(view)}
     `;
   }
