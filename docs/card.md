@@ -387,11 +387,11 @@ label and ArrowUp/ArrowDown reorder, and focus stays on the moved item's handle.
 `aria-haspopup`/`aria-expanded` and `role="menu"`; the progress bar is `role="progressbar"`.
 Every focusable control has a visible focus ring in the accent ink.
 
-**Known gaps, not fixed here:** the missing-entity notice and the "Delete" confirm-dialog button
-both use a theme colour (`--warning-color`, `--error-color`) directly as text-on-fill, which on the
-default fallback values falls short of 4.5:1 for 14 px text — the same category of tradeoff as the
-`.primary` button glyph above, and equally a per-theme value the card can't fully control without a
-runtime contrast fixup (Copilot review comments on PR #14, flagged to Garrett).
+The missing-entity notice and the "Delete" confirm-dialog button both use a theme colour
+(`--warning-color`, `--error-color`) directly as text-on-fill, which on the default fallback values
+falls short of 4.5:1 for 14 px text — the same category of tradeoff as the `.primary` button glyph
+above. Garrett decided (2026-09-15) to leave both as-is: they're the user's own theme values, and
+the card doesn't run a runtime contrast fixup on them (Copilot review comments on PR #14).
 
 ## Build
 
