@@ -163,7 +163,11 @@ the backoff testable under fake timers.
 
 The pending timer is cleared in `_unsubscribe`, which covers disconnect, an entity change, and the
 entity vanishing — a disconnected card never resubscribes, and the retry callback also re-checks
-`isConnected` before firing.
+`isConnected` before firing. `_unsubscribe` also bumps `_subscriptionGeneration`, so an attempt that
+was already in flight when teardown happened cannot schedule a *new* timer when it rejects moments
+later: without that bump the generation check still matched, and a card that had just been
+disconnected — or whose entity had just disappeared — started a retry chain nothing would cancel
+(Copilot review comment on PR #18).
 
 ### In-flight guard
 

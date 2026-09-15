@@ -275,6 +275,7 @@ export class ListAppListCard extends LitElement {
 
   private _unsubscribe(): void {
     this._cancelRetry();
+    this._subscriptionGeneration++;
     this._unsub?.then((unsub) => unsub());
     this._unsub = undefined;
     this._subscribedEntity = undefined;

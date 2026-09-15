@@ -107,6 +107,7 @@ beforeEach(() => {
 afterEach(() => {
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -240,6 +241,25 @@ describe("subscription retry", () => {
     card.remove();
     await vi.advanceTimersByTimeAsync(120_000);
     expect(attempts.count).toBe(1);
+  });
+
+  it("does not schedule a retry for a failure that lands after teardown", async () => {
+    const pending = deferred<() => void>();
+    let attempts = 0;
+    hass.connection.subscribeMessage = <T>(_callback: (message: T) => void, _message: Record<string, unknown>) => {
+      attempts++;
+      return pending.promise;
+    };
+    const card = await mount(hass);
+    await tick();
+    expect(attempts).toBe(1);
+
+    card.remove();
+    pending.reject(new Error("subscribe failed"));
+    await tick();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(attempts).toBe(1);
   });
 });
 
