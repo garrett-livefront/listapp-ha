@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Captures README screenshots from the dev harness via CDP. See CONTRIBUTING.md#readme-screenshots.
 import { spawn } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const CHROME =
@@ -36,20 +38,42 @@ async function cdp(ws, method, params = {}) {
   });
 }
 
+// Retry a check until it succeeds or the timeout elapses — used for both the CDP
+// endpoint and the harness's own render, neither of which have a fixed startup time.
+async function waitFor(check, { timeoutMs = 10_000, intervalMs = 150 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const result = await check();
+      if (result) return result;
+    } catch {
+      // not ready yet
+    }
+    if (Date.now() > deadline) throw new Error(`timed out waiting after ${timeoutMs}ms`);
+    await sleep(intervalMs);
+  }
+}
+
 async function main() {
   await mkdir(OUT_DIR, { recursive: true });
 
+  // An isolated profile dir: Chrome disables --remote-debugging-port on the default
+  // profile, and reusing it would also collide with any already-open Chrome.
+  const userDataDir = await mkdtemp(join(tmpdir(), "listapp-card-capture-"));
   const chrome = spawn(CHROME, [
     "--headless=new",
     `--remote-debugging-port=${PORT}`,
+    `--user-data-dir=${userDataDir}`,
     "--hide-scrollbars",
     "--force-color-profile=srgb",
     "--disable-gpu",
   ]);
-  await sleep(1500);
 
   try {
-    const target = await (await fetch(`http://127.0.0.1:${PORT}/json/new?${HARNESS_URL}`, { method: "PUT" })).json();
+    const target = await waitFor(async () => {
+      const res = await fetch(`http://127.0.0.1:${PORT}/json/new?${HARNESS_URL}`, { method: "PUT" });
+      return res.ok ? res.json() : null;
+    });
     const ws = new WebSocket(target.webSocketDebuggerUrl);
     await new Promise((resolve) => ws.addEventListener("open", resolve));
     await cdp(ws, "Page.enable");
@@ -58,7 +82,17 @@ async function main() {
       await cdp(ws, "Emulation.clearDeviceMetricsOverride");
       const url = `${HARNESS_URL}?scenario=${shot.scenario}&width=380`;
       await cdp(ws, "Page.navigate", { url });
-      await sleep(600);
+
+      // Wait for the harness to actually render both theme columns for this scenario,
+      // rather than a fixed delay — a cold dev-server or bundle rebuild is slower than any
+      // fixed sleep would reliably cover.
+      await waitFor(async () => {
+        const { result } = await cdp(ws, "Runtime.evaluate", {
+          expression: "document.querySelectorAll('.theme.light, .theme.dark').length === 2",
+          returnByValue: true,
+        });
+        return result.value;
+      });
 
       // Hide the harness chrome and per-scenario debug labels; not part of the shipped card.
       await cdp(ws, "Runtime.evaluate", {
@@ -110,6 +144,9 @@ async function main() {
     ws.close();
   } finally {
     chrome.kill();
+    await new Promise((resolve) => chrome.once("exit", resolve));
+    // Best-effort: Chrome can still hold a lock file open for a moment after exit.
+    await rm(userDataDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
