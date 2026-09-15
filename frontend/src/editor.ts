@@ -159,7 +159,7 @@ export class ListAppListCardEditor extends LitElement {
           <select .value=${data.entity} @change=${this._nativeChanged("entity")}>
             ${entityIds.length
               ? entityIds.map((id) => html`<option value=${id} ?selected=${id === data.entity}>${id}</option>`)
-              : html`<option value="">No ListApp lists found</option>`}
+              : html`<option value="">No Listapp lists found</option>`}
           </select>
         </label>
         <label class="field">
