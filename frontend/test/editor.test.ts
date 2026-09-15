@@ -104,6 +104,25 @@ describe("ListAppListCardEditor", () => {
     expect(editor.shadowRoot!.querySelector(".native")).not.toBeNull();
   });
 
+  it("keeps the configured entity selectable even without list_id, when others have it", async () => {
+    const twoEntityHass = {
+      states: {
+        "todo.groceries": { entity_id: "todo.groceries", state: "0", attributes: { list_id: "l1" } },
+        "todo.legacy": { entity_id: "todo.legacy", state: "0", attributes: {} },
+      },
+    } as unknown as HomeAssistant;
+    const editor = document.createElement("listapp-list-card-editor") as ListAppListCardEditor;
+    editor.setConfig({ type: "custom:listapp-list-card", entity: "todo.legacy" });
+    editor.hass = twoEntityHass;
+    document.body.append(editor);
+    await editor.updateComplete;
+
+    const select = editor.shadowRoot!.querySelector("select") as HTMLSelectElement;
+    const values = Array.from(select.options).map((o) => o.value);
+    expect(values).toContain("todo.legacy");
+    expect(select.value).toBe("todo.legacy");
+  });
+
   it("emits config-changed with the updated value from a native control", async () => {
     const editor = await mount();
     const events: Array<{ config: Record<string, unknown> }> = [];

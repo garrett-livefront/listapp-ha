@@ -123,7 +123,13 @@ export class ListAppListCardEditor extends LitElement {
   }
 
   private _entityIds(): string[] {
-    return this.hass ? listAppTodoEntities(this.hass) : [];
+    if (!this.hass) {
+      return [];
+    }
+    const ids = listAppTodoEntities(this.hass);
+    const current = this._config?.entity;
+    // Keep the configured entity selectable even if it lacks list_id (still valid per resolveConfig).
+    return current && !ids.includes(current) ? [current, ...ids] : ids;
   }
 
   protected override render() {
