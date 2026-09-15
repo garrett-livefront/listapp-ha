@@ -1,13 +1,31 @@
 # ListApp for Home Assistant
 
 A Home Assistant custom integration that links a ListApp account and exposes its lists as
-`todo` entities.
+`todo` entities, updated live as they change.
 
-**Status:** in development, not yet usable.
+- Each ListApp list becomes a `todo.listapp_<list>` entity, so lists work with HA's built-in
+  to-do card, voice assistants, and automations.
+- Updates arrive over a live stream — no polling delay.
+- Lists you only have viewer access to show up read-only.
+- **Configure** on the integration lets you change which lists are shown, and re-authenticate in
+  read-only mode.
+
+## Requirements
+
+- Home Assistant 2026.9.2 or newer (the integration is tested against this version; see
+  `hacs.json`).
+- [my.home-assistant.io](https://my.home-assistant.io/) configured with your Home Assistant URL,
+  so Google/Apple sign-in can redirect back to your instance.
 
 ## Installation
 
-Coming with the first release, via HACS.
+This repository is not yet in the HACS default store — add it as a custom repository:
+
+1. HACS → **⋮** (top right) → **Custom repositories**.
+2. Repository: `https://github.com/garrett-livefront/listapp-ha`, category **Integration**.
+3. Install **ListApp**, then restart Home Assistant.
+4. **Settings → Devices & services → Add integration → ListApp**, then sign in with Google or
+   Apple in the browser window that opens and pick the lists to add.
 
 ## Local development
 

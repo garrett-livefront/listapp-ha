@@ -241,6 +241,12 @@ ever re-fetches `_active_ids`, never rediscovers new lists; picking up newly-sha
 picker/options-flow action, not something polling or the stream does automatically (`docs` for the
 server route: newly-shared lists are deliberately not added mid-stream either).
 
+## Brand icon
+
+`custom_components/listapp/brand/icon.png` and `icon@2x.png` (256²/512², HA 2026.3+ local brand
+images) are generated, not hand-edited — source of truth is `listapp-mobile`'s
+`scripts/assets/generate-app-icons.mjs` (listapp-mobile PR in progress).
+
 ## Review outcomes from PR #3 (H2)
 
 Recorded here since they're answered questions worth not re-litigating:
