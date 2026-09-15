@@ -61,6 +61,21 @@ npm run dev                                     # harness with a mock hass at ht
 
 Architecture, options, states, the colour/icon rules and licences: [`docs/card.md`](docs/card.md).
 
+### README screenshots
+
+`frontend/scripts/capture-screenshots.mjs` drives the dev harness with headless Chrome over CDP and
+writes light/dark PNGs to `docs/images/`, used by the README's Dashboard card section. It needs the
+dev server running (`npm run dev`) and a local Chrome (`CHROME_PATH` to override the default macOS
+path):
+
+```
+cd frontend
+npm run dev &
+node scripts/capture-screenshots.mjs
+```
+
+Re-run it whenever a scenario in `dev/harness.js` or the card's visual design changes.
+
 ## CI
 
 `.github/workflows/test.yml`, `lint.yml`, `validate.yml` (`hassfest` + HACS validation) and
