@@ -51,7 +51,7 @@ you're signing in with.
 Signing in grants this integration OAuth scopes to read and write your ListApp lists
 (`lists:read`, plus `lists:write` unless you choose read-only mode) and `offline_access` so it can
 refresh your session without asking you to sign in again. It also reads your account ID and email
-to identify the connection — nothing else about your account.
+to identify the connection — no other account information.
 
 Removing the integration from Home Assistant stops it from being used locally, but does not revoke
 the underlying access grant on ListApp's server. To fully revoke access, use the ListApp app's
@@ -59,9 +59,11 @@ Connected apps screen (coming soon).
 
 ## Troubleshooting
 
-- **Reauthentication required**: Home Assistant asks you to sign in again when your ListApp
-  session expires, when it can't refresh your access token, or when you change read-only mode in
-  **Configure** — the previous grant no longer matches. Signing in again restores it.
+- **Reauthentication required**: Home Assistant asks you to sign in again when ListApp refuses to
+  refresh your session (your grant expired or was revoked) or when you change read-only mode in
+  **Configure** — the previous grant no longer matches. Signing in again restores it. A transient
+  network or server error does not trigger this — it shows the integration as unavailable and
+  retries instead.
 - **Linking gets stuck or errors after signing in**: check that the **My Home Assistant**
   integration is enabled (see Requirements) and that the URL saved for your browser at
   [my.home-assistant.io](https://my.home-assistant.io/) is correct.
