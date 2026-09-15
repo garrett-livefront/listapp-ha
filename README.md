@@ -3,9 +3,10 @@
 A Home Assistant custom integration that links a ListApp account and exposes its lists as
 `todo` entities, updated live as they change.
 
-- Each ListApp list becomes a `todo.listapp_<list>` entity, so lists work with HA's built-in
-  to-do card, voice assistants, and automations.
-- Updates arrive over a live stream — no polling delay.
+- Each selected ListApp list becomes a `todo.listapp_<list>` entity, so lists work with HA's
+  built-in to-do card, voice assistants, and automations.
+- Updates arrive over a live stream; if it disconnects, the integration falls back to polling
+  every 60 seconds until it reconnects.
 - Lists you only have viewer access to show up read-only.
 - **Configure** on the integration lets you change which lists are shown, and re-authenticate in
   read-only mode.
