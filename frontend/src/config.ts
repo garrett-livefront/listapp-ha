@@ -63,7 +63,7 @@ export function resolveConfig(config: ListAppCardConfig): ResolvedConfig {
 
 export function stubConfig(entityIds: string[], states: Record<string, { attributes: Record<string, unknown> }>): ListAppCardConfig {
   // Matched by the list_id attribute, not a todo.listapp_* name — users can rename entity ids.
-  const entity = entityIds.find((id) => typeof states[id]?.attributes.list_id === "string") ??
+  const entity = entityIds.find((id) => id.startsWith("todo.") && typeof states[id]?.attributes.list_id === "string") ??
     entityIds.find((id) => id.startsWith("todo.")) ??
     "";
   return { type: `custom:${CARD_TYPE}`, entity };

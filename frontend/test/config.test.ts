@@ -76,8 +76,14 @@ describe("stubConfig", () => {
 
   it("does not match by a todo.listapp_* name when list_id is absent", () => {
     const states = { "todo.listapp_groceries": { attributes: {} }, "todo.other": { attributes: {} } };
-    expect(stubConfig(["todo.listapp_groceries", "todo.other"], states).entity).toBe(
-      "todo.listapp_groceries",
-    );
+    expect(stubConfig(["todo.other", "todo.listapp_groceries"], states).entity).toBe("todo.other");
+  });
+
+  it("ignores a non-todo entity carrying list_id", () => {
+    const states = {
+      "light.list_id_lookalike": { attributes: { list_id: "abc" } },
+      "todo.other": { attributes: {} },
+    };
+    expect(stubConfig(["light.list_id_lookalike", "todo.other"], states).entity).toBe("todo.other");
   });
 });
