@@ -22,8 +22,9 @@ A Home Assistant custom integration that links a ListApp account and exposes its
 
 - Home Assistant 2026.3.0 or newer (see `hacs.json`; CI also tests against this minimum, see
   `docs/testing.md`).
-- [my.home-assistant.io](https://my.home-assistant.io/) configured with your Home Assistant URL,
-  so Google/Apple sign-in can redirect back to your instance.
+- The **My Home Assistant** integration enabled (it's part of `default_config`, so most installs
+  already have it; if you've removed `default_config`, add `my:` to `configuration.yaml`). Signing
+  in needs it to redirect back to your instance.
 - A ListApp account.
 
 ## Installation
@@ -41,6 +42,10 @@ This repository is not yet in the HACS default store — add it as a custom repo
 3. Use the button above, or **Settings → Devices & services → Add integration → ListApp**, then
    sign in with Google or Apple in the browser window that opens and pick the lists to add.
 
+The first time you sign in (or click a My Home Assistant button), my.home-assistant.io asks for
+your Home Assistant URL and remembers it in that browser — use one reachable from the browser
+you're signing in with.
+
 ## What data is shared
 
 Signing in grants this integration OAuth scopes to read and write your ListApp lists
@@ -53,6 +58,9 @@ the integration from Home Assistant.
 - **Reauthentication required**: Home Assistant asks you to sign in again when your ListApp
   session expires, when it can't refresh your access token, or when you change read-only mode in
   **Configure** — the previous grant no longer matches. Signing in again restores it.
+- **Linking gets stuck or errors after signing in**: check that the **My Home Assistant**
+  integration is enabled (see Requirements) and that the URL saved for your browser at
+  [my.home-assistant.io](https://my.home-assistant.io/) is correct.
 - **Debug logging**: add to `configuration.yaml` and restart, then check the logs:
 
   ```yaml
