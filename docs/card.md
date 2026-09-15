@@ -112,13 +112,16 @@ stock card (due dates, descriptions and the stock card's display-order option ar
   (the same toast the stock card gets from `showToast`) with "Listapp couldn't save that change.
   Try again." and re-renders so a checkbox snaps back to the real state. A rejected `add_item`
   leaves the typed text in the field, a rejected rename or delete keeps the dialog open, and a
-  failed `todo/item/subscribe` clears the subscription state so the next `hass` update retries it
-  (Copilot review comments on PR #14).
+  failed `todo/item/subscribe` clears the subscription state so the next `hass` update retries it;
+  a failed `remove_item` also keeps the confirm-clear dialog open, matching the single-item delete
+  path; reconnecting (`connectedCallback`) re-runs availability tracking instead of trusting a stale
+  guard (Copilot review comments on PR #14).
 - `unknown` is treated like `unavailable`.
 - Menus are exactly the stock card's: the Active section's ⋯ offers "Reorder items" / "Done
   reordering" only when the entity supports `MOVE_TODO_ITEM`; the Completed section's ⋯ offers
   "Clear completed" (with a confirmation) only when it supports `DELETE_TODO_ITEM`. There is no
-  header menu and no footer.
+  header menu and no footer. Reorder mode also ends if the entity loses `MOVE_TODO_ITEM` mid-session
+  (a role demotion), not just when the active list empties (Copilot review comment on PR #14).
 - `getCardSize` grows with the visible rows; `getGridOptions` reports 12 columns (min 6) and
   `rows: "auto"` so the sections view sizes it to content.
 
@@ -142,7 +145,9 @@ If HA later exposes a stable public element set for custom cards, swapping these
 ## Options
 
 YAML only in this slice; the visual editor is slice 3. `getStubConfig` picks the first
-`todo.listapp_*` entity so the card picker preview works.
+`todo.listapp_*` entity so the card picker preview works. The picker calls it with only `hass`
+(no `entities`/`fallback` arguments), so it falls back to `hass.states` rather than requiring
+them (Copilot review comment on PR #14).
 
 | Option | Default | Notes |
 | --- | --- | --- |

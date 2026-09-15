@@ -40,8 +40,14 @@ type Dialog = { kind: "edit"; item: TodoItem } | { kind: "confirm-clear"; uids: 
 type Menu = "active" | "completed";
 
 export class ListAppListCard extends LitElement {
-  static getStubConfig(_hass: HomeAssistant, entities: string[], fallback: string[]): ListAppCardConfig {
-    return stubConfig([...entities, ...fallback]);
+  static getStubConfig(
+    hass: HomeAssistant,
+    entities: string[] = [],
+    fallback: string[] = [],
+  ): ListAppCardConfig {
+    // The Lovelace card picker calls this with only `hass` — see docs/card.md#stub-config.
+    const candidates = entities.length || fallback.length ? [...entities, ...fallback] : Object.keys(hass.states);
+    return stubConfig(candidates);
   }
 
   @property({ attribute: false }) hass?: HomeAssistant;
@@ -113,6 +119,7 @@ export class ListAppListCard extends LitElement {
     super.connectedCallback();
     if (this.hasUpdated) {
       this._subscribe();
+      this._trackAvailability();
     }
     this._resize ??= new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width ?? 0;
@@ -143,8 +150,11 @@ export class ListAppListCard extends LitElement {
     if (changed.has("hass") || changed.has("_config")) {
       this._trackAvailability();
     }
-    if (this._reordering && this._view().active.length === 0) {
-      this._reordering = false;
+    if (this._reordering) {
+      const view = this._view();
+      if (view.active.length === 0 || !view.canMove) {
+        this._reordering = false;
+      }
     }
   }
 
