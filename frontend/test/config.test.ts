@@ -47,6 +47,9 @@ describe("resolveConfig", () => {
 
   it("rejects non-todo entities and bad values", () => {
     expect(() => resolveConfig({ type: "x", entity: "light.a" })).toThrow(/todo domain/);
+    for (const bad of ["todo", "todo.", "todo.a.b", "todo.Bad-Id", "todo.a b"]) {
+      expect(() => resolveConfig({ type: "x", entity: bad })).toThrow(/todo domain/);
+    }
     expect(() => resolveConfig({ type: "x" } as never)).toThrow(/todo domain/);
     expect(() => resolveConfig({ type: "x", entity: "todo.a", collapse_to: -1 })).toThrow(/collapse_to/);
     expect(() => resolveConfig({ type: "x", entity: "todo.a", collapse_to: 1.5 })).toThrow(/collapse_to/);

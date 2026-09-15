@@ -34,7 +34,7 @@ export function resolveConfig(config: ListAppCardConfig): ResolvedConfig {
   if (!config || typeof config !== "object") {
     throw new Error("Invalid configuration");
   }
-  if (typeof config.entity !== "string" || config.entity.split(".")[0] !== "todo") {
+  if (typeof config.entity !== "string" || !/^todo\.[a-z0-9_]+$/.test(config.entity)) {
     throw new Error("Specify an entity from within the todo domain");
   }
   if (

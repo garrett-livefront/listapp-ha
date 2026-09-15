@@ -78,9 +78,10 @@ export class ListAppListCard extends LitElement {
       return 3;
     }
     const view = this._view();
+    const columns = this._wide ? 2 : 1;
     const completedRows = view.showCompleted && !this._reordering ? view.completed.length : 0;
-    const rows = view.visibleActive.length + completedRows;
-    return 2 + (view.showAdd ? 1 : 0) + Math.ceil(rows / (this._wide ? 2 : 1)) + 1;
+    const rows = Math.ceil(view.visibleActive.length / columns) + Math.ceil(completedRows / columns);
+    return 2 + (view.showAdd ? 1 : 0) + rows + 1;
   }
 
   getGridOptions() {
@@ -146,7 +147,9 @@ export class ListAppListCard extends LitElement {
     const entity = this._config.entity;
     this._subscribedEntity = entity;
     this._unsub = subscribeItems(this.hass, entity, (update) => {
-      this._items = update.items;
+      if (this._subscribedEntity === entity) {
+        this._items = update.items;
+      }
     }).catch((err: unknown) => {
       console.warn("listapp-list-card: item subscription failed", err);
       return () => undefined;
@@ -188,18 +191,23 @@ export class ListAppListCard extends LitElement {
   }
 
   private async _checkAvailability(): Promise<void> {
-    if (!this.hass) {
+    const entity = this._config?.entity;
+    if (!this.hass || !entity) {
       return;
     }
+    let availability: Availability;
     try {
       const [entries, flows, entryId] = await Promise.all([
         fetchConfigEntries(this.hass, "listapp"),
         fetchFlowsInProgress(this.hass),
         this._resolveEntryId(),
       ]);
-      this._availability = classifyAvailability(this._stateObj(), entries, flows, entryId);
+      availability = classifyAvailability(this._stateObj(), entries, flows, entryId);
     } catch {
-      this._availability = classifyAvailability(this._stateObj(), undefined, undefined);
+      availability = classifyAvailability(this._stateObj(), undefined, undefined);
+    }
+    if (this._config?.entity === entity) {
+      this._availability = availability;
     }
   }
 
@@ -619,6 +627,8 @@ export class ListAppListCard extends LitElement {
     if (this._reordering) {
       this._expanded = true;
     }
+    const target = this._reordering ? ".handle" : '.menu-btn[data-menu="active"]';
+    void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLElement>(target)?.focus());
   };
 
   private _confirmClear(view: CardView): void {

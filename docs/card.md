@@ -129,7 +129,7 @@ YAML only in this slice; the visual editor is slice 3. `getStubConfig` picks the
 
 | Option | Default | Notes |
 | --- | --- | --- |
-| `entity` | required | a `todo.` entity; anything else throws in `setConfig` |
+| `entity` | required | a well-formed `todo.<object_id>` entity id; anything else throws in `setConfig` |
 | `title` | entity's friendly name | override |
 | `use_list_color` | `true` | `false` uses the theme's `--primary-color` as the accent |
 | `show_title` | `true` | `false` hides the title text only; the icon tile and subline stay (as in the design) |
