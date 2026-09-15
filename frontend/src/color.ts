@@ -125,8 +125,9 @@ export function accentInk(accent: Rgb, background: Rgb, dark: boolean): string {
     return toHex(lighten(accent, DARK_INK_LIGHTEN));
   }
   let ink = accent;
-  for (let step = 0; step < 8 && contrast(ink, background) < INK_MIN_CONTRAST; step++) {
-    ink = darken(ink, 0.12);
+  while (contrast(ink, background) < INK_MIN_CONTRAST && ink.some((c) => c > 0)) {
+    const next = darken(ink, 0.12);
+    ink = next.every((c, i) => c === ink[i]) ? ([0, 0, 0] as Rgb) : next;
   }
   return toHex(ink);
 }

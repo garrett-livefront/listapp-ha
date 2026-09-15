@@ -84,6 +84,11 @@ describe("accentInk", () => {
   it("leaves an already-readable accent alone", () => {
     expect(accentInk(parseHex("#9810fa")!, [255, 255, 255], false)).toBe("#9810fa");
   });
+  it("keeps darkening until 4.5:1 on a grey card, and terminates at black", () => {
+    const ink = accentInk([255, 255, 255], [128, 128, 128], false);
+    expect(contrast(parseHex(ink)!, [128, 128, 128])).toBeGreaterThanOrEqual(4.5);
+    expect(accentInk([255, 255, 255], [0, 0, 0], false)).toBe("#000000");
+  });
 });
 
 describe("palette", () => {

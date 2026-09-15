@@ -59,6 +59,7 @@ export class ListAppListCard extends LitElement {
 
   private _unsub?: Promise<() => void>;
   private _subscribedEntity?: string;
+  private _subscriptionGeneration = 0;
   private _resize?: ResizeObserver;
   private _availabilityTimer?: number;
   private _checkedAvailabilityFor?: string;
@@ -165,9 +166,10 @@ export class ListAppListCard extends LitElement {
       return;
     }
     const entity = this._config.entity;
+    const generation = ++this._subscriptionGeneration;
     this._subscribedEntity = entity;
     const attempt = subscribeItems(this.hass, entity, (update) => {
-      if (this._subscribedEntity === entity) {
+      if (this._subscriptionGeneration === generation && this._subscribedEntity === entity) {
         this._items = update.items;
       }
     }).catch((err: unknown) => {
@@ -621,7 +623,14 @@ export class ListAppListCard extends LitElement {
     const status =
       item.status === TodoItemStatus.Completed ? TodoItemStatus.NeedsAction : TodoItemStatus.Completed;
     const { hass, _config: config } = this;
-    await this._call(() => setItemStatus(hass, config.entity, item, status));
+    const previous = this._items;
+    const optimistic = previous?.map((it) => (it.uid === item.uid ? { ...it, status } : it));
+    this._items = optimistic;
+    if (!(await this._call(() => setItemStatus(hass, config.entity, item, status)))) {
+      if (this._items === optimistic && this._config === config) {
+        this._items = previous;
+      }
+    }
   }
 
   private _toggleExpanded = () => {

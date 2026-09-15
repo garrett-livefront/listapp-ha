@@ -94,7 +94,9 @@ stock card (due dates, descriptions and the stock card's display-order option ar
 
 - Items come from the websocket subscription `todo/item/subscribe` (re-subscribed when the entity
   changes, unsubscribed on disconnect), not from polling `todo/item/list`.
-- Checking/unchecking calls `todo.update_item` with `status`; adding calls `todo.add_item`;
+- Checking/unchecking calls `todo.update_item` with `status` after an optimistic local status
+  change (so a second tap before the subscription update toggles the new state, not the old one);
+  adding calls `todo.add_item`;
   rename calls `todo.update_item` with `rename`; delete and "Clear completed" call
   `todo.remove_item` with a list of uids; reorder calls the websocket `todo/item/move` with
   `previous_uid` (`undefined` for "move to top"), after an optimistic local reorder that is rolled
@@ -215,8 +217,8 @@ From the accent, `color.ts#buildPalette` derives:
   get a dark glyph. This is a deliberate departure from the design's "white glyph" and is tested.
 - **ink** — accent-coloured text and icons on the card background ("Show N more", the +, links).
   Dark themes lighten the accent by 38 % as the design does. Light themes darken it in 12 % steps
-  until it reaches 4.5:1 against `--card-background-color`, which only affects the light accents
-  above (yellow becomes an olive, lime a moss green).
+  until it reaches 4.5:1 against `--card-background-color` (or reaches black), which for the app's
+  palette only affects the light accents above (yellow becomes an olive, lime a moss green).
 - **tint** — the accent at 18 % alpha (dark) or 10 % (light) for the empty-state tile.
 - **field / hover / track** — the neutral surfaces the design draws as fixed greys (add field
   background, row and menu hover, progress track). They are translucent black or white at the
