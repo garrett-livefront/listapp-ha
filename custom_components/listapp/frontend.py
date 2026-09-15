@@ -35,7 +35,7 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
         integration = await async_get_integration(hass, DOMAIN)
         path = Path(__file__).parent / "frontend" / CARD_FILENAME
         await hass.http.async_register_static_paths(
-            [StaticPathConfig(CARD_URL, str(path), cache_headers=False)]
+            [StaticPathConfig(CARD_URL, str(path), cache_headers=True)]
         )
         add_extra_js_url(hass, f"{CARD_URL}?v={integration.version}")
         domain_data[_REGISTERED] = True

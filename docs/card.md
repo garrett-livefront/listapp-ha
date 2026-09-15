@@ -51,7 +51,10 @@ both pass the flag check before either has registered (Copilot review comment on
   so every dashboard loads it automatically — the user never adds a Lovelace resource by hand.
 - The URL carries `?v=<manifest version>` for cache busting: `add_extra_js_url` is called with the
   integration's `manifest.json` version (via `loader.async_get_integration`), so a HACS update that
-  bumps the version invalidates any cached copy of the JS in the browser.
+  bumps the version invalidates any cached copy of the JS in the browser. `StaticPathConfig` is
+  registered with `cache_headers=True` — the versioned URL, not a no-cache header, is what
+  invalidates the bundle on update, so the static path should cache long-lived like any other
+  bundled asset (Copilot review comment on PR #13).
 - `manifest.json` depends on `frontend` and `http` (previously just `auth`), since both must be set
   up before `async_register_frontend` runs.
 
