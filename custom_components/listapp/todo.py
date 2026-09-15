@@ -26,7 +26,7 @@ from .api import (
     ListAppList,
     ListAppNotFoundError,
 )
-from .const import DOMAIN
+from .const import ATTR_COLOR, ATTR_ICON, ATTR_LIST_ID, ATTR_ROLE, DOMAIN, KNOWN_ROLES
 from .coordinator import ListAppConfigEntry, ListAppCoordinator
 
 PARALLEL_UPDATES = 1
@@ -73,6 +73,8 @@ async def async_setup_entry(
 
 class ListAppTodoEntity(CoordinatorEntity[ListAppCoordinator], TodoListEntity):
     _attr_has_entity_name = True
+    # The card reads these live; recording them would just bloat history. See docs/card.md.
+    _unrecorded_attributes = frozenset({ATTR_LIST_ID, ATTR_COLOR, ATTR_ICON, ATTR_ROLE})
 
     def __init__(self, coordinator: ListAppCoordinator, list_id: str) -> None:
         super().__init__(coordinator)
@@ -96,6 +98,17 @@ class ListAppTodoEntity(CoordinatorEntity[ListAppCoordinator], TodoListEntity):
     @property
     def name(self) -> str | None:
         return self._list.title if self._list else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | None] | None:
+        if self._list is None:
+            return None
+        return {
+            ATTR_LIST_ID: self._list_id,
+            ATTR_COLOR: self._list.color,
+            ATTR_ICON: self._list.icon,
+            ATTR_ROLE: self._list.my_role.lower() if self._list.my_role in KNOWN_ROLES else None,
+        }
 
     @property
     def supported_features(self) -> TodoListEntityFeature:

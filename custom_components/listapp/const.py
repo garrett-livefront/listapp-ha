@@ -17,7 +17,15 @@ SCOPE_OFFLINE: Final = "offline_access"
 SCOPE_READ: Final = "lists:read"
 SCOPE_WRITE: Final = "lists:write"
 
+ROLE_OWNER: Final = "OWNER"
+ROLE_EDITOR: Final = "EDITOR"
 ROLE_VIEWER: Final = "VIEWER"
+KNOWN_ROLES: Final = frozenset({ROLE_OWNER, ROLE_EDITOR, ROLE_VIEWER})
+
+ATTR_LIST_ID: Final = "list_id"
+ATTR_COLOR: Final = "color"
+ATTR_ICON: Final = "icon"
+ATTR_ROLE: Final = "role"
 
 CONF_READ_ONLY: Final = "read_only"
 CONF_SELECTED_LISTS: Final = "selected_lists"

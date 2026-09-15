@@ -242,6 +242,12 @@ ever re-fetches `_active_ids`, never rediscovers new lists; picking up newly-sha
 picker/options-flow action, not something polling or the stream does automatically (`docs` for the
 server route: newly-shared lists are deliberately not added mid-stream either).
 
+## Lovelace card
+
+The bundled "ListApp list" card — the `color`/`icon`/`role`/`list_id` attribute contract, how the
+card JS is served and registered once per instance, and cache busting: see
+[`docs/card.md`](card.md).
+
 ## Brand icon
 
 `custom_components/listapp/brand/icon.png` and `icon@2x.png` (256²/512², HA 2026.3+ local brand

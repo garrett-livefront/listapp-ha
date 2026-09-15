@@ -3,7 +3,7 @@
   "name": "ListApp",
   "codeowners": ["@garrett-livefront"],
   "config_flow": true,
-  "dependencies": ["auth"],
+  "dependencies": ["auth", "frontend", "http"],
   "documentation": "https://github.com/garrett-livefront/listapp-ha",
   "integration_type": "service",
   "iot_class": "cloud_push",

@@ -58,6 +58,7 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         self._batch_handle: asyncio.TimerHandle | None = None
         self._pending_role_refresh = False
         self._role_overrides: dict[str, tuple[str, int]] = {}
+        self._summary_overrides: dict[str, tuple[str | None, str | None, int]] = {}
         self._poll_start_count = 0
 
     @property
@@ -117,6 +118,15 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
             lst = result.get(list_id)
             if lst is not None:
                 result[list_id] = replace(lst, my_role=role)
+        # Same in-flight-poll race as roles above, for list.updated's color/icon — see
+        # docs/architecture.md#roles.
+        for list_id, (color, icon, event_generation) in list(self._summary_overrides.items()):
+            if poll_count >= event_generation:
+                del self._summary_overrides[list_id]
+                continue
+            lst = result.get(list_id)
+            if lst is not None:
+                result[list_id] = replace(lst, color=color, icon=icon)
         return result
 
     def async_start_stream(self) -> None:
@@ -226,7 +236,18 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         lst = data.get(list_id)
         if lst is None:
             return
-        data[lst.id] = replace(lst, title=title, owner_id=owner_id)
+        color = payload["color"] if "color" in payload else lst.color
+        icon = payload["icon"] if "icon" in payload else lst.icon
+        # Recorded so a poll already in flight can't overwrite this with stale color/icon —
+        # see _async_update_data and docs/architecture.md#roles.
+        self._summary_overrides[list_id] = (color, icon, self._poll_start_count)
+        data[lst.id] = replace(
+            lst,
+            title=title,
+            owner_id=owner_id,
+            color=color,
+            icon=icon,
+        )
 
     def _apply_list_deleted(self, data: dict, list_id: str, payload: dict) -> None:
         if payload["id"] != list_id:
@@ -234,6 +255,7 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         data.pop(list_id, None)
         self._active_ids.discard(list_id)
         self._role_overrides.pop(list_id, None)
+        self._summary_overrides.pop(list_id, None)
 
     def _apply_member_deleted(self, data: dict, list_id: str, payload: dict) -> None:
         if payload.get("userId") != self.account_id:
@@ -241,6 +263,7 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         data.pop(list_id, None)
         self._active_ids.discard(list_id)
         self._role_overrides.pop(list_id, None)
+        self._summary_overrides.pop(list_id, None)
 
     def _apply_member_upserted(self, data: dict, list_id: str, payload: dict) -> None:
         if payload.get("userId") != self.account_id:
