@@ -41,7 +41,7 @@ const LIST_ICONS = {
 const UI_ICONS = [
   "plus",
   "check",
-  "ellipsis-vertical",
+  "square-check",
   "circle-check",
   "triangle-alert",
   "cloud-off",

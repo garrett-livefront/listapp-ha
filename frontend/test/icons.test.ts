@@ -32,7 +32,7 @@ describe("list icons", () => {
     expect(LIST_ICON_MARKUP.utensils).toContain("m16 2-2.3 2.3");
   });
   it("has the UI glyphs the card renders", () => {
-    for (const name of ["plus", "check", "ellipsis-vertical", "circle-check", "triangle-alert", "cloud-off", "grip-vertical", "trash"]) {
+    for (const name of ["plus", "check", "square-check", "circle-check", "triangle-alert", "cloud-off", "grip-vertical", "trash"]) {
       expect(UI_ICON_MARKUP[name as keyof typeof UI_ICON_MARKUP]).toBeTruthy();
     }
   });

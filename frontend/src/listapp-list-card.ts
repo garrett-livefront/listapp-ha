@@ -76,7 +76,7 @@ export class ListAppListCard extends LitElement {
     }
     const view = this._view();
     const rows = view.visibleActive.length + (view.showCompleted ? view.completed.length : 0);
-    return (this._config.showTitle ? 2 : 1) + (view.showAdd ? 1 : 0) + Math.ceil(rows / 2) + 1;
+    return 2 + (view.showAdd ? 1 : 0) + Math.ceil(rows / 2) + 1;
   }
 
   getGridOptions() {
@@ -222,6 +222,9 @@ export class ListAppListCard extends LitElement {
       "--la-glyph": palette.glyph,
       "--la-ink": palette.ink,
       "--la-tint": palette.tint,
+      "--la-field": palette.field,
+      "--la-hover": palette.hover,
+      "--la-track": palette.track,
     };
     return html`
       <ha-card
@@ -240,11 +243,13 @@ export class ListAppListCard extends LitElement {
 
   private _renderCard(view: CardView) {
     const stateObj = this._stateObj()!;
-    const unavailable = view.state === "unavailable_auth" || view.state === "unavailable_transient";
+    if (view.state === "unavailable_auth" || view.state === "unavailable_transient") {
+      return this._renderUnavailable(view);
+    }
     return html`
-      ${this._config!.showTitle ? this._renderHeader(view, stateObj.attributes.icon) : nothing}
-      ${view.showProgress && !unavailable ? this._renderProgress(view) : nothing}
-      ${unavailable ? this._renderUnavailable(view) : this._renderBody(view)}
+      ${this._renderHeader(view, stateObj.attributes.icon)}
+      ${view.showProgress ? this._renderProgress(view) : nothing}
+      ${this._renderBody(view)}
     `;
   }
 
@@ -253,7 +258,7 @@ export class ListAppListCard extends LitElement {
       <header class="head">
         <div class="tile" aria-hidden="true">${listIcon(iconKey, 20)}</div>
         <div class="titles">
-          <h2 class="title">${view.title}</h2>
+          ${this._config!.showTitle ? html`<h2 class="title">${view.title}</h2>` : nothing}
           <p class="subline">${view.subline}</p>
         </div>
       </header>
@@ -279,13 +284,13 @@ export class ListAppListCard extends LitElement {
   private _renderUnavailable(view: CardView) {
     const auth = view.state === "unavailable_auth";
     return html`
-      <div class="state">
-        <div class="state-icon warn">${uiIcon(auth ? "triangle-alert" : "cloud-off", 26)}</div>
+      <div class="state unavailable">
+        <div class="warn">${uiIcon(auth ? "triangle-alert" : "cloud-off", 28)}</div>
         <h3>${auth ? S.authTitle : S.transientTitle}</h3>
         <p>${auth ? S.authBody : S.transientBody}</p>
         ${auth
           ? html`<button class="primary" @click=${this._signIn}>${S.signIn}</button>`
-          : html`<button class="link" @click=${this._signIn}>${S.checkIntegration}</button>`}
+          : html`<button class="text" @click=${this._signIn}>${S.checkIntegration}</button>`}
       </div>
     `;
   }
@@ -308,8 +313,8 @@ export class ListAppListCard extends LitElement {
           placeholder=${S.addPlaceholder}
           aria-label=${S.addPlaceholder}
         />
-        <button type="submit" class="icon-btn add-btn" title=${S.addButton} aria-label=${S.addButton}>
-          ${uiIcon("plus", 22)}
+        <button type="submit" class="add-btn" title=${S.addButton} aria-label=${S.addButton}>
+          ${uiIcon("plus", 20)}
         </button>
       </form>
     `;
@@ -318,8 +323,8 @@ export class ListAppListCard extends LitElement {
   private _renderSections(view: CardView) {
     if (view.state === "empty") {
       return html`
-        <div class="state">
-          <div class="state-icon">${listIcon(this._stateObj()?.attributes.icon, 26)}</div>
+        <div class="state empty">
+          <div class="state-icon">${uiIcon("square-check", 23)}</div>
           <h3>${S.emptyTitle}</h3>
           <p>${view.showAdd ? S.emptyBody : S.emptyBodyViewer}</p>
         </div>
@@ -329,8 +334,8 @@ export class ListAppListCard extends LitElement {
     return html`
       ${view.state === "all_done"
         ? html`
-            <div class="state">
-              <div class="state-icon done">${uiIcon("circle-check", 26)}</div>
+            <div class="state all-done">
+              <div class="state-icon done">${uiIcon("check", 24)}</div>
               <h3>${S.allDoneTitle}</h3>
               <p>${view.showCompleted ? S.allDoneBody : S.allDoneHidden(view.done)}</p>
             </div>
@@ -344,9 +349,9 @@ export class ListAppListCard extends LitElement {
               ${this._renderItems(view.visibleActive, view, true)}
               ${view.hiddenActive > 0 || (this._expanded && this._config!.collapseTo > 0 && view.active.length > this._config!.collapseTo)
                 ? html`
-                    <button class="link more" @click=${this._toggleExpanded} aria-expanded=${this._expanded}>
-                      ${uiIcon(this._expanded ? "chevron-up" : "chevron-down", 18)}
+                    <button class="more" @click=${this._toggleExpanded} aria-expanded=${this._expanded}>
                       ${this._expanded ? S.showLess : S.showMore(view.hiddenActive)}
+                      ${uiIcon(this._expanded ? "chevron-up" : "chevron-down", 15)}
                     </button>
                   `
                 : nothing}
@@ -355,7 +360,7 @@ export class ListAppListCard extends LitElement {
       ${view.showCompleted && view.completed.length && !this._reordering
         ? html`
             <div class="divider" role="separator"></div>
-            <section class="section" aria-label=${S.completed}>
+            <section class="section completed" aria-label=${S.completed}>
               <div class="section-head">
                 <h3>${S.completed}<span class="count"> · ${view.completed.length}</span></h3>
                 ${view.canDelete ? this._renderMenu("completed", view) : nothing}
@@ -373,7 +378,7 @@ export class ListAppListCard extends LitElement {
     return html`
       <div class="menu-wrap">
         <button
-          class="icon-btn menu-btn"
+          class="menu-btn"
           aria-haspopup="menu"
           aria-expanded=${open}
           aria-label=${S.menu(label)}
@@ -381,7 +386,7 @@ export class ListAppListCard extends LitElement {
           data-menu=${menu}
           @click=${this._toggleMenu}
         >
-          ${uiIcon("ellipsis-vertical", 20)}
+          <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
         </button>
         ${open
           ? html`
@@ -460,7 +465,7 @@ export class ListAppListCard extends LitElement {
                 data-index=${index}
                 @keydown=${this._handleKeydown}
               >
-                ${uiIcon("grip-vertical", 20)}
+                ${uiIcon("grip-vertical", 18)}
               </button>
             `
           : nothing}
@@ -708,6 +713,7 @@ export class ListAppListCard extends LitElement {
     await moveItem(this.hass, this._config.entity, uid, previousUid);
   }
 
+  // Sizes, weights and spacing follow the quiet-rail design — see docs/card.md#design-fidelity
   static override styles = css`
     :host {
       display: block;
@@ -717,10 +723,11 @@ export class ListAppListCard extends LitElement {
       position: relative;
       height: 100%;
       box-sizing: border-box;
-      padding-bottom: 8px;
+      overflow: hidden;
       color: var(--primary-text-color);
       font-family: var(--ha-card-font-family, var(--paper-font-body1_-_font-family, inherit));
       --la-target: 44px;
+      --la-muted: var(--secondary-text-color);
     }
     button {
       font: inherit;
@@ -736,6 +743,9 @@ export class ListAppListCard extends LitElement {
       outline: 2px solid var(--la-ink);
       outline-offset: 2px;
     }
+    svg {
+      display: block;
+    }
     .viewer button.summary,
     .viewer .check {
       cursor: default;
@@ -745,13 +755,13 @@ export class ListAppListCard extends LitElement {
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 16px 16px 12px;
+      padding: 18px 18px 0;
     }
     .tile {
       flex: none;
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
+      width: 38px;
+      height: 38px;
+      border-radius: 11px;
       display: grid;
       place-items: center;
       background: var(--la-accent);
@@ -762,29 +772,31 @@ export class ListAppListCard extends LitElement {
     }
     .title {
       margin: 0;
-      font-size: var(--ha-card-header-font-size, 1.25rem);
-      font-weight: 500;
-      line-height: 1.3;
+      font-size: 17.5px;
+      font-weight: 800;
+      letter-spacing: -0.2px;
+      line-height: 1.25;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
     .subline {
-      margin: 2px 0 0;
-      font-size: 0.85rem;
-      color: var(--secondary-text-color);
+      margin: 1px 0 0;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--la-muted);
     }
 
     .progress {
-      height: 4px;
-      margin: 0 16px 4px;
-      border-radius: 2px;
-      background: var(--la-tint);
+      height: 5px;
+      margin: 14px 18px 0;
+      border-radius: 99px;
+      background: var(--la-track);
       overflow: hidden;
     }
     .progress-fill {
       height: 100%;
-      border-radius: 2px;
+      border-radius: 99px;
       background: var(--la-accent);
       transition: width 200ms ease;
     }
@@ -792,100 +804,133 @@ export class ListAppListCard extends LitElement {
     .add {
       display: flex;
       align-items: center;
-      gap: 4px;
-      margin: 8px 16px 4px;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 16px 18px 0;
+      padding: 13px 14px;
+      border-radius: 10px 10px 0 0;
+      background: var(--la-field);
       border-bottom: 2px solid var(--la-accent);
     }
     .add-input {
       flex: 1;
       min-width: 0;
-      height: var(--la-target);
-      padding: 0 4px;
+      padding: 0;
       font: inherit;
+      font-size: 15.5px;
+      font-weight: 500;
+      line-height: 20px;
       color: var(--primary-text-color);
       background: transparent;
       border: 0;
       outline: none;
     }
     .add-input::placeholder {
-      color: var(--secondary-text-color);
+      color: var(--la-muted);
+      opacity: 1;
     }
     .add-btn {
+      flex: none;
+      position: relative;
+      width: 20px;
+      height: 20px;
       color: var(--la-ink);
     }
-    .icon-btn {
-      width: var(--la-target);
-      height: var(--la-target);
-      display: grid;
-      place-items: center;
-      border-radius: 50%;
-      color: var(--secondary-text-color);
+    .add-btn svg {
+      stroke-width: 2.4;
     }
-    .icon-btn:hover {
-      background: var(--la-tint);
+    .add-btn::before,
+    .menu-btn::before {
+      content: "";
+      position: absolute;
+      inset: -12px;
     }
 
-    .section {
-      padding: 4px 0 0;
-    }
     .section-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      min-height: 36px;
-      padding: 0 8px 0 16px;
+      padding: 16px 16px 6px;
+    }
+    .completed .section-head {
+      padding: 14px 16px 4px;
     }
     .section-head h3 {
       margin: 0;
-      font-size: 0.8rem;
-      font-weight: 500;
-      letter-spacing: 0.02em;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
       text-transform: uppercase;
-      color: var(--secondary-text-color);
-    }
-    .count {
-      font-weight: 400;
+      color: var(--la-muted);
     }
     .divider {
       height: 1px;
-      margin: 8px 16px 0;
+      margin: 12px 0 0;
       background: var(--divider-color);
+    }
+    .menu-btn {
+      position: relative;
+      padding: 5px;
+      border-radius: 6px;
+      color: var(--la-muted);
+    }
+    .menu-btn:hover,
+    .menu-btn[aria-expanded="true"] {
+      background: var(--la-hover);
+    }
+    .dots {
+      display: flex;
+      gap: 3px;
+    }
+    .dots i {
+      width: 3.5px;
+      height: 3.5px;
+      border-radius: 50%;
+      background: currentColor;
     }
 
     .items {
       list-style: none;
       margin: 0;
-      padding: 0 8px;
+      padding: 0 10px 4px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 2px;
+    }
+    .completed .items {
+      padding-bottom: 12px;
+    }
+    .section:last-child .items {
+      padding-bottom: 12px;
     }
     .wide .items {
-      display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      column-gap: 8px;
     }
     .item {
       position: relative;
       display: flex;
       align-items: center;
+      gap: 13px;
       min-height: var(--la-target);
-      border-radius: 8px;
+      box-sizing: border-box;
+      padding: 11px 8px;
+      border-radius: 10px;
     }
     .item.interactive:hover {
-      background: var(--la-tint);
+      background: var(--la-hover);
     }
     .check {
       flex: none;
       position: relative;
-      width: var(--la-target);
-      height: var(--la-target);
-      display: grid;
-      place-items: center;
+      width: 22px;
+      height: 22px;
       cursor: pointer;
     }
     .check input {
       position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
+      inset: -11px;
+      width: var(--la-target);
+      height: var(--la-target);
       margin: 0;
       opacity: 0;
       cursor: inherit;
@@ -894,17 +939,20 @@ export class ListAppListCard extends LitElement {
       cursor: default;
     }
     .box {
-      width: 20px;
-      height: 20px;
+      width: 22px;
+      height: 22px;
       box-sizing: border-box;
-      border-radius: 5px;
-      border: 2px solid var(--secondary-text-color);
+      border-radius: 7px;
+      border: 2px solid var(--la-muted);
       display: grid;
       place-items: center;
       color: transparent;
       transition:
         background 120ms ease,
         border-color 120ms ease;
+    }
+    .box svg {
+      stroke-width: 3.2;
     }
     .check input:checked + .box {
       background: var(--la-accent);
@@ -918,24 +966,28 @@ export class ListAppListCard extends LitElement {
     .summary {
       flex: 1;
       min-width: 0;
-      min-height: var(--la-target);
       display: flex;
       align-items: center;
-      padding: 8px 12px 8px 0;
+      padding: 0;
       text-align: left;
+      font-size: 15.5px;
+      font-weight: 600;
       line-height: 1.35;
       overflow-wrap: anywhere;
     }
     .done .summary {
-      color: var(--secondary-text-color);
+      font-weight: 500;
+      color: var(--la-muted);
       text-decoration: line-through;
     }
     .handle {
+      flex: none;
+      width: 22px;
+      height: 22px;
+      display: grid;
+      place-items: center;
       cursor: grab;
-      color: var(--secondary-text-color);
-    }
-    .reorder .item {
-      border: 1px dashed transparent;
+      color: var(--la-muted);
     }
     .reorder .item.dragging {
       opacity: 0.4;
@@ -944,23 +996,21 @@ export class ListAppListCard extends LitElement {
       box-shadow: inset 0 2px 0 var(--la-accent);
     }
 
-    .link,
     .more {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      min-height: 36px;
-      padding: 0 12px;
-      border-radius: 18px;
+      gap: 7px;
+      margin: 6px 18px 0;
+      padding: 4px 0;
+      font-size: 13.5px;
+      font-weight: 700;
       color: var(--la-ink);
-      font-weight: 500;
     }
-    .more {
-      margin: 2px 8px 0;
+    .more svg {
+      stroke-width: 2.6;
     }
-    .link:hover,
-    .more:hover {
-      background: var(--la-tint);
+    .section:last-child .more {
+      margin-bottom: 14px;
     }
 
     .menu-wrap {
@@ -968,14 +1018,14 @@ export class ListAppListCard extends LitElement {
     }
     .menu {
       position: absolute;
-      top: calc(100% - 4px);
+      top: calc(100% + 2px);
       right: 0;
       z-index: 2;
       min-width: 200px;
       padding: 4px 0;
-      border-radius: var(--ha-card-border-radius, 12px);
+      border-radius: 12px;
       background: var(--card-background-color, #fff);
-      box-shadow: var(--ha-card-box-shadow, 0 4px 16px rgba(0, 0, 0, 0.24));
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
       border: 1px solid var(--divider-color);
     }
     .menu button {
@@ -987,9 +1037,11 @@ export class ListAppListCard extends LitElement {
       padding: 0 16px;
       text-align: left;
       white-space: nowrap;
+      font-size: 14px;
+      font-weight: 600;
     }
     .menu button:hover {
-      background: var(--la-tint);
+      background: var(--la-hover);
     }
     .danger {
       color: var(--error-color, #db4437);
@@ -999,32 +1051,58 @@ export class ListAppListCard extends LitElement {
       display: flex;
       flex-direction: column;
       align-items: center;
+      gap: 9px;
       text-align: center;
-      padding: 20px 24px 16px;
+      padding: 30px 22px 28px;
+    }
+    .state.all-done {
+      padding: 26px 22px 24px;
+    }
+    .state.unavailable {
+      gap: 10px;
+      padding: 30px 22px 26px;
     }
     .state-icon {
-      width: 48px;
-      height: 48px;
-      border-radius: 50%;
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
       display: grid;
       place-items: center;
       background: var(--la-tint);
       color: var(--la-ink);
     }
-    .state-icon.warn {
-      background: rgba(255, 152, 0, 0.14);
-      color: var(--warning-color, #ff9800);
+    .state-icon.done {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--la-accent);
+      color: var(--la-glyph);
+    }
+    .state-icon.done svg {
+      stroke-width: 3;
+    }
+    .warn {
+      color: #f59e0b;
     }
     .state h3 {
-      margin: 12px 0 4px;
-      font-size: 1rem;
-      font-weight: 500;
+      margin: 0;
+      font-size: 16px;
+      font-weight: 800;
     }
     .state p {
-      margin: 0 0 12px;
-      color: var(--secondary-text-color);
-      font-size: 0.9rem;
-      max-width: 36ch;
+      margin: 0;
+      max-width: 250px;
+      font-size: 13.5px;
+      font-weight: 500;
+      line-height: 1.5;
+      color: var(--la-muted);
+    }
+    .state.unavailable p {
+      max-width: 270px;
+    }
+    .state .primary,
+    .state .text {
+      margin-top: 6px;
     }
     .notice {
       display: flex;
@@ -1035,25 +1113,27 @@ export class ListAppListCard extends LitElement {
     }
 
     .primary {
-      min-height: 36px;
-      padding: 0 20px;
-      border-radius: 18px;
+      padding: 9px 16px;
+      border-radius: 10px;
       background: var(--la-accent);
       color: var(--la-glyph);
-      font-weight: 500;
+      font-size: 14px;
+      font-weight: 700;
     }
     .primary.danger-bg {
       background: var(--error-color, #db4437);
       color: #fff;
     }
     .text {
-      min-height: 36px;
-      padding: 0 12px;
-      border-radius: 18px;
+      padding: 9px 16px;
+      border-radius: 10px;
       color: var(--la-ink);
-      font-weight: 500;
+      font-size: 14px;
+      font-weight: 700;
     }
-    .text:hover,
+    .text:hover {
+      background: var(--la-hover);
+    }
     .primary:hover {
       filter: brightness(0.95);
     }
@@ -1073,31 +1153,40 @@ export class ListAppListCard extends LitElement {
     }
     .dialog h3 {
       margin: 0 0 12px;
-      font-size: 1.25rem;
-      font-weight: 500;
+      font-size: 17.5px;
+      font-weight: 800;
+      letter-spacing: -0.2px;
     }
     .dialog p {
       margin: 0 0 12px;
-      color: var(--secondary-text-color);
+      font-size: 13.5px;
+      font-weight: 500;
+      line-height: 1.5;
+      color: var(--la-muted);
     }
     .field {
       display: block;
     }
     .field span {
       display: block;
-      font-size: 0.8rem;
-      color: var(--secondary-text-color);
-      margin-bottom: 4px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--la-muted);
+      margin-bottom: 6px;
     }
     .field input {
       width: 100%;
       box-sizing: border-box;
-      height: var(--la-target);
-      padding: 0 8px;
+      padding: 13px 14px;
       font: inherit;
+      font-size: 15.5px;
+      font-weight: 500;
       color: var(--primary-text-color);
-      background: transparent;
+      background: var(--la-field);
       border: 0;
+      border-radius: 10px 10px 0 0;
       border-bottom: 2px solid var(--la-accent);
       outline: none;
     }

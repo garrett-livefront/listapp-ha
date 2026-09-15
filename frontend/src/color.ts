@@ -101,7 +101,16 @@ export interface Palette {
   glyph: string;
   ink: string;
   tint: string;
+  field: string;
+  hover: string;
+  track: string;
 }
+
+// Neutral surfaces the design draws in fixed greys — translucent so they follow the theme's card bg.
+export const NEUTRALS = {
+  dark: { field: "rgba(0, 0, 0, 0.3)", hover: "rgba(255, 255, 255, 0.05)", track: "rgba(255, 255, 255, 0.14)" },
+  light: { field: "rgba(0, 0, 0, 0.06)", hover: "rgba(0, 0, 0, 0.04)", track: "rgba(0, 0, 0, 0.1)" },
+} as const;
 
 export const GLYPH_MIN_CONTRAST = 3;
 export const INK_MIN_CONTRAST = 4.5;
@@ -135,5 +144,6 @@ export function buildPalette(accentHex: string, backgroundHex: string, dark: boo
     glyph: glyphOn(accent),
     ink: accentInk(accent, background, dark),
     tint: tintOf(accent, dark),
+    ...NEUTRALS[dark ? "dark" : "light"],
   };
 }

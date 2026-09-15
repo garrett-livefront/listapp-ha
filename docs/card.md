@@ -132,7 +132,7 @@ YAML only in this slice; the visual editor is slice 3. `getStubConfig` picks the
 | `entity` | required | a `todo.` entity; anything else throws in `setConfig` |
 | `title` | entity's friendly name | override |
 | `use_list_color` | `true` | `false` uses the theme's `--primary-color` as the accent |
-| `show_title` | `true` | hides the header row (icon tile, title, subline) |
+| `show_title` | `true` | `false` hides the title text only; the icon tile and subline stay (as in the design) |
 | `show_add` | `true` | the add field; always hidden for viewers regardless |
 | `show_completed` | `true` | the Completed section |
 | `show_progress` | `true` | the progress bar under the header |
@@ -146,11 +146,11 @@ Derived in `model.ts#deriveView`, in priority order:
 | State | When | Shows |
 | --- | --- | --- |
 | `missing` | entity not in `hass.states` | warning row "Entity not found" |
-| `unavailable_auth` | entity `unavailable`/`unknown` **and** a `listapp` reauth flow is in progress (or the config entry is in `setup_error` with an auth-flavoured reason) | warning icon, "List unavailable", "ListApp needs you to sign in again…", **Sign in** |
-| `unavailable_transient` | `unavailable`/`unknown` otherwise | cloud-off icon, "Can't reach ListApp right now", **Check integration** link |
+| `unavailable_auth` | entity `unavailable`/`unknown` **and** a `listapp` reauth flow is in progress (or the config entry is in `setup_error` with an auth-flavoured reason) | replaces header and body: warning triangle, "List unavailable", "ListApp needs you to sign in again…", **Sign in** |
+| `unavailable_transient` | `unavailable`/`unknown` otherwise | same layout with a cloud-off icon, "Can't reach ListApp right now", **Check integration** |
 | `loading` | subscribed, no message yet | header only |
-| `empty` | zero items | list icon, "Nothing on this list", "Add the first item above, or ask Assist to add one." (viewers see "Nothing has been added yet.") |
-| `all_done` | items but no active | circle-check, "All done", "Every item on this list is checked off." or "N completed items are hidden." when `show_completed: false` |
+| `empty` | zero items | check-square tile, "Nothing on this list", "Add the first item above, or ask Assist to add one." (viewers see "Nothing has been added yet.") |
+| `all_done` | items but no active | accent circle with a check, "All done", "Every item on this list is checked off." or "N completed items are hidden." when `show_completed: false` |
 | `list` | otherwise | Active and Completed sections |
 
 **Viewer** is `role == "viewer"` **or** `supported_features` lacking `CREATE_TODO_ITEM` or
@@ -201,8 +201,11 @@ From the accent, `color.ts#buildPalette` derives:
   Dark themes lighten the accent by 38 % as the design does. Light themes darken it in 12 % steps
   until it reaches 4.5:1 against `--card-background-color`, which only affects the light accents
   above (yellow becomes an olive, lime a moss green).
-- **tint** — the accent at 18 % alpha (dark) or 10 % (light) for hover, the progress track, the
-  state icon disc and menu hover.
+- **tint** — the accent at 18 % alpha (dark) or 10 % (light) for the empty-state tile.
+- **field / hover / track** — the neutral surfaces the design draws as fixed greys (add field
+  background, row and menu hover, progress track). They are translucent black or white at the
+  design's alpha, so they sit on whatever `--card-background-color` the theme has instead of
+  hard-coding a grey.
 
 Dark mode is `hass.themes.darkMode`, falling back to `prefers-color-scheme`; the card background is
 read from the computed `--card-background-color`. With `use_list_color: false` the accent is the
@@ -217,6 +220,21 @@ uses), so the SVG paths are bundled and nothing is fetched at runtime. Two keys 
 current names and are mapped in the script: the app's `home` is lucide's `house`, and `utensils` is
 `utensils-crossed` (matching the app's `UtensilsCrossed` import). Unknown or null keys fall back to
 `list-checks`. Lucide is ISC-licensed; the notice is in `NOTICE` and the bundle banner.
+
+## Design fidelity
+
+Sizes, weights, letter-spacing, radii, padding and gaps in `listapp-list-card.ts`'s styles are the
+design's values verbatim (variant 1b "quiet rail", `HA Todo Card.dc.html` in the Claude Design
+project): 38 px tile with an 11 px radius, 17.5 px/800 title at −0.2 px tracking, 12.5 px/600
+subline, 5 px progress bar, the add field as a filled block with a 2 px accent underline and the +
+on the right, 12 px/800 section labels at 1.2 px tracking, 22 px checkboxes with a 7 px radius,
+15.5 px item text (600 active, 500 struck-through completed), 13.5 px/700 "Show N more". Deliberate
+departures from the mock, all decided before the build: HA theme variables and font instead of the
+fixed greys and Manrope; no header ⋯ and no "shared by" footer; a dark glyph on low-contrast accents;
+native controls; the transient-unavailable and viewer-empty wording. The card's outer radius, border
+and shadow are left to `ha-card` so it matches the neighbouring cards in any theme, rather than
+forcing the mock's 16 px. The ⋯ is drawn as three 3.5 px dots in CSS, not a lucide glyph, to match
+the mock's horizontal ellipsis.
 
 ## Theming
 
@@ -294,9 +312,6 @@ colours, icon key mapping, availability classification, and move → `previous_u
 
 - **Strings are English only.** Custom cards can't add keys to `hass.localize`; shipping our own
   translations means a small i18n table keyed on `hass.language`. Not done in this slice.
-- **Design file access.** The DesignSync tool wasn't available in the build session, so slice 2 was
-  built from the written product decisions rather than the `HA Todo Card.dc.html` artboards.
-  Spacing and type sizes should be checked against the design in slice 4's screenshot pass.
 - **Unavailable for other reasons.** An entity also goes `unavailable` when its list disappears
   from the coordinator (deleted or unshared). That currently reads as transient; if it should say
   something else, the coordinator would need to expose why.
