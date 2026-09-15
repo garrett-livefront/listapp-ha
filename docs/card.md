@@ -165,8 +165,13 @@ The entity state alone can't tell the two apart — both are `unavailable`. On e
 card calls `config_entries/get` (domain `listapp`) and `config_entries/flow/progress` and classifies
 (`model.ts#classifyAvailability`): a flow with `handler == "listapp"` and `context.source ==
 "reauth"` means auth; failing that, a `setup_error` entry whose `reason` mentions auth/token/sign
-in; otherwise transient. It re-checks every 30 s while unavailable and resets when the entity
-recovers. If the websocket calls themselves fail, it falls back to transient. The integration
+in; otherwise transient. Both checks are scoped to the entity's own config entry — looked up once per
+entity via `config/entity_registry/get` — so with two ListApp accounts linked, a reauth on account A
+doesn't put account B's cards into the auth state (Copilot review comment on PR #14). If the registry
+lookup fails the scope widens to any `listapp` entry. It re-checks every 30 s while unavailable and
+resets when the entity recovers. If the websocket calls themselves fail, it falls back to transient.
+The unavailable layouts replace the header entirely (the design's choice), so there is no
+"Unavailable" subline. The integration
 starts the reauth flow itself (`ConfigEntryAuthFailed` and `todo.py`'s `_async_write`), so the flow
 check is the authoritative signal.
 
@@ -192,8 +197,11 @@ matters). If the mobile palette or hash changes, those vectors fail here.
 
 From the accent, `color.ts#buildPalette` derives:
 
-- **glyph** — the colour of white-on-accent content (tile icon, checked tick, Sign in label).
-  White is used when it reaches WCAG 3:1 against the accent, else a near-black `#1c1917`. Of the
+- **glyph** — the colour of white-on-accent content (tile icon, checked tick, the Sign in and Save
+  button labels). White is used when it reaches WCAG 3:1 against the accent, else a near-black
+  `#1c1917`. 3:1 is the graphics threshold; the 14 px/700 button labels on mid-tone accents such as
+  `#3b82f6` (white at ~3.7:1) sit below the 4.5:1 text threshold. Kept deliberately so the buttons
+  match the design's accent-filled look (Copilot review comment on PR #14, flagged to Garrett). Of the
   app's 14 colours, white fails on lime `#84cc16`, yellow `#eab308`, amber `#f59e0b`, green
   `#22c55e`, teal `#14b8a6`, cyan `#06b6d4`, sky `#0ea5e9` and orange `#f97316` — so those eight
   get a dark glyph. This is a deliberate departure from the design's "white glyph" and is tested.

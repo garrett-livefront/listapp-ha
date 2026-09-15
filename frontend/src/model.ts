@@ -76,10 +76,7 @@ export function collapse<T>(items: T[], collapseTo: number, expanded: boolean): 
   return { shown: items.slice(0, collapseTo), hidden: items.length - collapseTo };
 }
 
-export function subline(total: number, done: number, viewer: boolean, unavailable = false): string {
-  if (unavailable) {
-    return "Unavailable";
-  }
+export function subline(total: number, done: number, viewer: boolean): string {
   if (viewer) {
     return `${total} ${total === 1 ? "item" : "items"} · view only`;
   }
@@ -101,17 +98,22 @@ export function entityTitle(stateObj: HassEntity | undefined, entityId: string):
 export const isUnavailable = (stateObj: HassEntity): boolean =>
   stateObj.state === UNAVAILABLE || stateObj.state === UNKNOWN;
 
+// Scoped to the entity's own config entry when known — see docs/card.md#auth-vs-transient-unavailability
 export function classifyAvailability(
   stateObj: HassEntity | undefined,
   entries: ConfigEntry[] | undefined,
   flows: FlowProgress[] | undefined,
+  entryId: string | null | undefined = undefined,
   domain = "listapp",
 ): Availability {
   if (!stateObj || !isUnavailable(stateObj)) {
     return "available";
   }
   const reauthFlow = flows?.some(
-    (flow) => flow.handler === domain && flow.context?.source === "reauth",
+    (flow) =>
+      flow.handler === domain &&
+      flow.context?.source === "reauth" &&
+      (!entryId || flow.context.entry_id === entryId),
   );
   if (reauthFlow) {
     return "auth";
@@ -119,6 +121,7 @@ export function classifyAvailability(
   const authError = entries?.some(
     (entry) =>
       entry.domain === domain &&
+      (!entryId || entry.entry_id === entryId) &&
       entry.state === "setup_error" &&
       /auth|token|sign in|log in|credential/i.test(entry.reason ?? ""),
   );
@@ -169,7 +172,7 @@ export function deriveView({ config, stateObj, items, availability, expanded }: 
     canDelete,
     canMove,
     title: config.title ?? entityTitle(stateObj, config.entity),
-    subline: subline(total, done, viewer, availability !== "available"),
+    subline: subline(total, done, viewer),
     total,
     done,
     progress: total === 0 ? 0 : done / total,

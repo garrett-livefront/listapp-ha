@@ -58,7 +58,6 @@ describe("splitItems / subline", () => {
     expect(subline(5, 2, false)).toBe("2 of 5 done");
     expect(subline(1, 0, true)).toBe("1 item · view only");
     expect(subline(4, 1, true)).toBe("4 items · view only");
-    expect(subline(4, 1, true, true)).toBe("Unavailable");
   });
 });
 
@@ -110,7 +109,6 @@ describe("deriveView states", () => {
   it("unavailable variants win over items", () => {
     const auth = view({ availability: "auth", stateObj: entity({}, "unavailable") });
     expect(auth.state).toBe("unavailable_auth");
-    expect(auth.subline).toBe("Unavailable");
     expect(view({ availability: "transient", stateObj: entity({}, "unavailable") }).state).toBe(
       "unavailable_transient",
     );
@@ -187,6 +185,13 @@ describe("classifyAvailability", () => {
     expect(
       classifyAvailability(down, [{ entry_id: "e", domain: "listapp", state: "setup_retry", reason: "timeout" }], []),
     ).toBe("transient");
+  });
+  it("only counts the entity's own config entry when the entry id is known", () => {
+    const flows = [{ flow_id: "f", handler: "listapp", context: { source: "reauth", entry_id: "acct-a" } }];
+    const entries = [{ entry_id: "acct-a", domain: "listapp", state: "setup_error", reason: "Authentication expired" }];
+    expect(classifyAvailability(down, entries, flows, "acct-a")).toBe("auth");
+    expect(classifyAvailability(down, entries, flows, "acct-b")).toBe("transient");
+    expect(classifyAvailability(down, entries, flows, undefined)).toBe("auth");
   });
   it("defaults to transient when the websocket lookups are unavailable", () => {
     expect(classifyAvailability(down, undefined, undefined)).toBe("transient");

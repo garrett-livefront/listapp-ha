@@ -10,6 +10,7 @@ import {
   createItem,
   deleteItems,
   fetchConfigEntries,
+  fetchEntityRegistryEntry,
   fetchFlowsInProgress,
   INTEGRATION_PAGE,
   moveItem,
@@ -61,6 +62,8 @@ export class ListAppListCard extends LitElement {
   private _resize?: ResizeObserver;
   private _availabilityTimer?: number;
   private _checkedAvailabilityFor?: string;
+  private _entryIdFor?: string;
+  private _entryId?: string | null;
   private _paletteKey?: string;
   private _palette?: Palette;
 
@@ -75,8 +78,9 @@ export class ListAppListCard extends LitElement {
       return 3;
     }
     const view = this._view();
-    const rows = view.visibleActive.length + (view.showCompleted ? view.completed.length : 0);
-    return 2 + (view.showAdd ? 1 : 0) + Math.ceil(rows / 2) + 1;
+    const completedRows = view.showCompleted && !this._reordering ? view.completed.length : 0;
+    const rows = view.visibleActive.length + completedRows;
+    return 2 + (view.showAdd ? 1 : 0) + Math.ceil(rows / (this._wide ? 2 : 1)) + 1;
   }
 
   getGridOptions() {
@@ -114,6 +118,9 @@ export class ListAppListCard extends LitElement {
     }
     if (changed.has("hass") || changed.has("_config")) {
       this._trackAvailability();
+    }
+    if (this._reordering && this._view().active.length === 0) {
+      this._reordering = false;
     }
   }
 
@@ -185,14 +192,31 @@ export class ListAppListCard extends LitElement {
       return;
     }
     try {
-      const [entries, flows] = await Promise.all([
+      const [entries, flows, entryId] = await Promise.all([
         fetchConfigEntries(this.hass, "listapp"),
         fetchFlowsInProgress(this.hass),
+        this._resolveEntryId(),
       ]);
-      this._availability = classifyAvailability(this._stateObj(), entries, flows);
+      this._availability = classifyAvailability(this._stateObj(), entries, flows, entryId);
     } catch {
       this._availability = classifyAvailability(this._stateObj(), undefined, undefined);
     }
+  }
+
+  private async _resolveEntryId(): Promise<string | null | undefined> {
+    const entity = this._config?.entity;
+    if (!this.hass || !entity) {
+      return undefined;
+    }
+    if (this._entryIdFor !== entity) {
+      try {
+        this._entryId = (await fetchEntityRegistryEntry(this.hass, entity)).config_entry_id ?? null;
+      } catch {
+        this._entryId = undefined;
+      }
+      this._entryIdFor = entity;
+    }
+    return this._entryId;
   }
 
   private _resolvePalette(): Palette {
@@ -297,8 +321,7 @@ export class ListAppListCard extends LitElement {
 
   private _renderBody(view: CardView) {
     return html`
-      ${view.showAdd ? this._renderAdd() : nothing}
-      ${view.state === "loading" ? nothing : this._renderSections(view)}
+      ${view.state === "loading" ? nothing : html`${view.showAdd ? this._renderAdd() : nothing}${this._renderSections(view)}`}
     `;
   }
 
@@ -326,7 +349,7 @@ export class ListAppListCard extends LitElement {
         <div class="state empty">
           <div class="state-icon">${uiIcon("square-check", 23)}</div>
           <h3>${S.emptyTitle}</h3>
-          <p>${view.showAdd ? S.emptyBody : S.emptyBodyViewer}</p>
+          <p>${view.viewer ? S.emptyBodyViewer : S.emptyBody}</p>
         </div>
       `;
     }
@@ -584,8 +607,9 @@ export class ListAppListCard extends LitElement {
 
   private _menuKeydown = (ev: KeyboardEvent) => {
     if (ev.key === "Escape") {
+      const menu = this._menu;
       this._menu = null;
-      this.renderRoot.querySelector<HTMLElement>(".menu-btn")?.focus();
+      this.renderRoot.querySelector<HTMLElement>(`.menu-btn[data-menu="${menu}"]`)?.focus();
     }
   };
 
@@ -1082,7 +1106,7 @@ export class ListAppListCard extends LitElement {
       stroke-width: 3;
     }
     .warn {
-      color: #f59e0b;
+      color: var(--warning-color, #f59e0b);
     }
     .state h3 {
       margin: 0;

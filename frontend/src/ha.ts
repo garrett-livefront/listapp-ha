@@ -100,6 +100,14 @@ export interface FlowProgress {
   context?: { source?: string; entry_id?: string };
 }
 
+export interface EntityRegistryEntry {
+  entity_id: string;
+  config_entry_id?: string | null;
+}
+
+export const fetchEntityRegistryEntry = (hass: HomeAssistant, entityId: string) =>
+  hass.callWS<EntityRegistryEntry>({ type: "config/entity_registry/get", entity_id: entityId });
+
 export const fetchConfigEntries = (hass: HomeAssistant, domain: string) =>
   hass.callWS<ConfigEntry[]>({ type: "config_entries/get", domain });
 
