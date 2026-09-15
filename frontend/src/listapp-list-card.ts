@@ -1,0 +1,1134 @@
+// Behaviour mirrors Home Assistant's hui-todo-list-card (Apache-2.0) — see NOTICE and docs/card.md
+import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
+import { property, state } from "lit/decorators.js";
+import { classMap } from "lit/directives/class-map.js";
+import { repeat } from "lit/directives/repeat.js";
+import { styleMap } from "lit/directives/style-map.js";
+import { buildPalette, HA_PRIMARY_FALLBACK, resolveListColor, type Palette } from "./color.js";
+import { CARD_TYPE, resolveConfig, stubConfig, type ListAppCardConfig, type ResolvedConfig } from "./config.js";
+import {
+  createItem,
+  deleteItems,
+  fetchConfigEntries,
+  fetchFlowsInProgress,
+  INTEGRATION_PAGE,
+  moveItem,
+  navigate,
+  renameItem,
+  setItemStatus,
+  subscribeItems,
+  TodoItemStatus,
+  type HomeAssistant,
+  type TodoItem,
+} from "./ha.js";
+import { listIcon, uiIcon } from "./icons.js";
+import {
+  classifyAvailability,
+  deriveView,
+  isUnavailable,
+  previousUidAfterMove,
+  type Availability,
+  type CardView,
+} from "./model.js";
+import { STRINGS as S } from "./strings.js";
+
+const WIDE_BREAKPOINT = 560;
+const AVAILABILITY_RECHECK_MS = 30_000;
+
+type Dialog = { kind: "edit"; item: TodoItem } | { kind: "confirm-clear"; uids: string[] };
+type Menu = "active" | "completed";
+
+export class ListAppListCard extends LitElement {
+  static getStubConfig(_hass: HomeAssistant, entities: string[], fallback: string[]): ListAppCardConfig {
+    return stubConfig([...entities, ...fallback]);
+  }
+
+  @property({ attribute: false }) hass?: HomeAssistant;
+
+  @state() private _config?: ResolvedConfig;
+  @state() private _items?: TodoItem[];
+  @state() private _availability: Availability = "available";
+  @state() private _expanded = false;
+  @state() private _reordering = false;
+  @state() private _menu: Menu | null = null;
+  @state() private _wide = false;
+  @state() private _dialog: Dialog | null = null;
+  @state() private _dragUid: string | null = null;
+  @state() private _dropIndex: number | null = null;
+
+  private _unsub?: Promise<() => void>;
+  private _subscribedEntity?: string;
+  private _resize?: ResizeObserver;
+  private _availabilityTimer?: number;
+  private _checkedAvailabilityFor?: string;
+  private _paletteKey?: string;
+  private _palette?: Palette;
+
+  setConfig(config: ListAppCardConfig): void {
+    this._config = resolveConfig(config);
+    this._expanded = false;
+    this._reordering = false;
+  }
+
+  getCardSize(): number {
+    if (!this._config) {
+      return 3;
+    }
+    const view = this._view();
+    const rows = view.visibleActive.length + (view.showCompleted ? view.completed.length : 0);
+    return (this._config.showTitle ? 2 : 1) + (view.showAdd ? 1 : 0) + Math.ceil(rows / 2) + 1;
+  }
+
+  getGridOptions() {
+    return { columns: 12, min_columns: 6, rows: "auto" };
+  }
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    if (this.hasUpdated) {
+      this._subscribe();
+    }
+    this._resize ??= new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? 0;
+      this._wide = width >= WIDE_BREAKPOINT;
+    });
+    this._resize.observe(this);
+    document.addEventListener("click", this._onDocumentClick);
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this._unsubscribe();
+    this._resize?.disconnect();
+    document.removeEventListener("click", this._onDocumentClick);
+    this._stopAvailabilityTimer();
+  }
+
+  protected override willUpdate(changed: PropertyValues): void {
+    if (!this.hass || !this._config) {
+      return;
+    }
+    if (this._subscribedEntity !== this._config.entity || (!this._unsub && this._config.entity in this.hass.states)) {
+      this._items = undefined;
+      this._subscribe();
+    }
+    if (changed.has("hass") || changed.has("_config")) {
+      this._trackAvailability();
+    }
+  }
+
+  private _stateObj() {
+    return this.hass && this._config ? this.hass.states[this._config.entity] : undefined;
+  }
+
+  private _view(): CardView {
+    return deriveView({
+      config: this._config!,
+      stateObj: this._stateObj(),
+      items: this._items,
+      availability: this._availability,
+      expanded: this._expanded,
+    });
+  }
+
+  private _subscribe(): void {
+    this._unsubscribe();
+    if (!this.hass || !this._config || !(this._config.entity in this.hass.states)) {
+      return;
+    }
+    const entity = this._config.entity;
+    this._subscribedEntity = entity;
+    this._unsub = subscribeItems(this.hass, entity, (update) => {
+      this._items = update.items;
+    }).catch((err: unknown) => {
+      console.warn("listapp-list-card: item subscription failed", err);
+      return () => undefined;
+    });
+  }
+
+  private _unsubscribe(): void {
+    this._unsub?.then((unsub) => unsub());
+    this._unsub = undefined;
+    this._subscribedEntity = undefined;
+  }
+
+  private _trackAvailability(): void {
+    const stateObj = this._stateObj();
+    if (!stateObj || !isUnavailable(stateObj)) {
+      this._availability = "available";
+      this._checkedAvailabilityFor = undefined;
+      this._stopAvailabilityTimer();
+      return;
+    }
+    const key = `${stateObj.entity_id}:${stateObj.state}`;
+    if (this._checkedAvailabilityFor === key) {
+      return;
+    }
+    this._checkedAvailabilityFor = key;
+    if (this._availability === "available") {
+      this._availability = "transient";
+    }
+    void this._checkAvailability();
+    this._stopAvailabilityTimer();
+    this._availabilityTimer = window.setInterval(() => void this._checkAvailability(), AVAILABILITY_RECHECK_MS);
+  }
+
+  private _stopAvailabilityTimer(): void {
+    if (this._availabilityTimer !== undefined) {
+      window.clearInterval(this._availabilityTimer);
+      this._availabilityTimer = undefined;
+    }
+  }
+
+  private async _checkAvailability(): Promise<void> {
+    if (!this.hass) {
+      return;
+    }
+    try {
+      const [entries, flows] = await Promise.all([
+        fetchConfigEntries(this.hass, "listapp"),
+        fetchFlowsInProgress(this.hass),
+      ]);
+      this._availability = classifyAvailability(this._stateObj(), entries, flows);
+    } catch {
+      this._availability = classifyAvailability(this._stateObj(), undefined, undefined);
+    }
+  }
+
+  private _resolvePalette(): Palette {
+    const stateObj = this._stateObj();
+    const dark = this.hass?.themes?.darkMode ?? window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+    const computed = getComputedStyle(this);
+    const background = computed.getPropertyValue("--card-background-color").trim() || (dark ? "#1c1c1c" : "#ffffff");
+    const accent = this._config!.useListColor
+      ? resolveListColor(stateObj?.attributes.color, stateObj?.attributes.list_id ?? this._config!.entity)
+      : computed.getPropertyValue("--primary-color").trim() || HA_PRIMARY_FALLBACK;
+    const key = `${accent}|${background}|${dark}`;
+    if (this._paletteKey !== key) {
+      this._paletteKey = key;
+      this._palette = buildPalette(accent, background, dark);
+    }
+    return this._palette!;
+  }
+
+  protected override render() {
+    if (!this.hass || !this._config) {
+      return nothing;
+    }
+    const view = this._view();
+    const palette = this._resolvePalette();
+    const vars = {
+      "--la-accent": palette.accent,
+      "--la-glyph": palette.glyph,
+      "--la-ink": palette.ink,
+      "--la-tint": palette.tint,
+    };
+    return html`
+      <ha-card
+        style=${styleMap(vars)}
+        class=${classMap({ wide: this._wide, viewer: view.viewer, reordering: this._reordering })}
+      >
+        ${view.state === "missing" ? this._renderMissing() : this._renderCard(view)}
+        ${this._renderDialog(view)}
+      </ha-card>
+    `;
+  }
+
+  private _renderMissing() {
+    return html`<div class="notice">${uiIcon("triangle-alert", 22)}<span>${S.missing(this._config!.entity)}</span></div>`;
+  }
+
+  private _renderCard(view: CardView) {
+    const stateObj = this._stateObj()!;
+    const unavailable = view.state === "unavailable_auth" || view.state === "unavailable_transient";
+    return html`
+      ${this._config!.showTitle ? this._renderHeader(view, stateObj.attributes.icon) : nothing}
+      ${view.showProgress && !unavailable ? this._renderProgress(view) : nothing}
+      ${unavailable ? this._renderUnavailable(view) : this._renderBody(view)}
+    `;
+  }
+
+  private _renderHeader(view: CardView, iconKey: string | null | undefined) {
+    return html`
+      <header class="head">
+        <div class="tile" aria-hidden="true">${listIcon(iconKey, 20)}</div>
+        <div class="titles">
+          <h2 class="title">${view.title}</h2>
+          <p class="subline">${view.subline}</p>
+        </div>
+      </header>
+    `;
+  }
+
+  private _renderProgress(view: CardView) {
+    const pct = Math.round(view.progress * 100);
+    return html`
+      <div
+        class="progress"
+        role="progressbar"
+        aria-label="Completed"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow=${pct}
+      >
+        <div class="progress-fill" style=${styleMap({ width: `${pct}%` })}></div>
+      </div>
+    `;
+  }
+
+  private _renderUnavailable(view: CardView) {
+    const auth = view.state === "unavailable_auth";
+    return html`
+      <div class="state">
+        <div class="state-icon warn">${uiIcon(auth ? "triangle-alert" : "cloud-off", 26)}</div>
+        <h3>${auth ? S.authTitle : S.transientTitle}</h3>
+        <p>${auth ? S.authBody : S.transientBody}</p>
+        ${auth
+          ? html`<button class="primary" @click=${this._signIn}>${S.signIn}</button>`
+          : html`<button class="link" @click=${this._signIn}>${S.checkIntegration}</button>`}
+      </div>
+    `;
+  }
+
+  private _renderBody(view: CardView) {
+    return html`
+      ${view.showAdd ? this._renderAdd() : nothing}
+      ${view.state === "loading" ? nothing : this._renderSections(view)}
+    `;
+  }
+
+  private _renderAdd() {
+    return html`
+      <form class="add" @submit=${this._submitAdd}>
+        <input
+          class="add-input"
+          name="summary"
+          type="text"
+          autocomplete="off"
+          placeholder=${S.addPlaceholder}
+          aria-label=${S.addPlaceholder}
+        />
+        <button type="submit" class="icon-btn add-btn" title=${S.addButton} aria-label=${S.addButton}>
+          ${uiIcon("plus", 22)}
+        </button>
+      </form>
+    `;
+  }
+
+  private _renderSections(view: CardView) {
+    if (view.state === "empty") {
+      return html`
+        <div class="state">
+          <div class="state-icon">${listIcon(this._stateObj()?.attributes.icon, 26)}</div>
+          <h3>${S.emptyTitle}</h3>
+          <p>${view.showAdd ? S.emptyBody : S.emptyBodyViewer}</p>
+        </div>
+      `;
+    }
+    const activeLabel = this._reordering ? S.reorder : S.active;
+    return html`
+      ${view.state === "all_done"
+        ? html`
+            <div class="state">
+              <div class="state-icon done">${uiIcon("circle-check", 26)}</div>
+              <h3>${S.allDoneTitle}</h3>
+              <p>${view.showCompleted ? S.allDoneBody : S.allDoneHidden(view.done)}</p>
+            </div>
+          `
+        : html`
+            <section class="section" aria-label=${S.active}>
+              <div class="section-head">
+                <h3>${activeLabel}<span class="count"> · ${view.active.length}</span></h3>
+                ${view.canMove ? this._renderMenu("active", view) : nothing}
+              </div>
+              ${this._renderItems(view.visibleActive, view, true)}
+              ${view.hiddenActive > 0 || (this._expanded && this._config!.collapseTo > 0 && view.active.length > this._config!.collapseTo)
+                ? html`
+                    <button class="link more" @click=${this._toggleExpanded} aria-expanded=${this._expanded}>
+                      ${uiIcon(this._expanded ? "chevron-up" : "chevron-down", 18)}
+                      ${this._expanded ? S.showLess : S.showMore(view.hiddenActive)}
+                    </button>
+                  `
+                : nothing}
+            </section>
+          `}
+      ${view.showCompleted && view.completed.length && !this._reordering
+        ? html`
+            <div class="divider" role="separator"></div>
+            <section class="section" aria-label=${S.completed}>
+              <div class="section-head">
+                <h3>${S.completed}<span class="count"> · ${view.completed.length}</span></h3>
+                ${view.canDelete ? this._renderMenu("completed", view) : nothing}
+              </div>
+              ${this._renderItems(view.completed, view, false)}
+            </section>
+          `
+        : nothing}
+    `;
+  }
+
+  private _renderMenu(menu: Menu, view: CardView) {
+    const open = this._menu === menu;
+    const label = menu === "active" ? S.active : S.completed;
+    return html`
+      <div class="menu-wrap">
+        <button
+          class="icon-btn menu-btn"
+          aria-haspopup="menu"
+          aria-expanded=${open}
+          aria-label=${S.menu(label)}
+          title=${S.menu(label)}
+          data-menu=${menu}
+          @click=${this._toggleMenu}
+        >
+          ${uiIcon("ellipsis-vertical", 20)}
+        </button>
+        ${open
+          ? html`
+              <div class="menu" role="menu" @keydown=${this._menuKeydown}>
+                ${menu === "active"
+                  ? html`<button role="menuitem" @click=${this._toggleReorder}>
+                      ${this._reordering ? S.exitReorder : S.reorder}
+                    </button>`
+                  : html`<button role="menuitem" class="danger" @click=${() => this._confirmClear(view)}>
+                      ${uiIcon("trash", 18)} ${S.clearCompleted}
+                    </button>`}
+              </div>
+            `
+          : nothing}
+      </div>
+    `;
+  }
+
+  private _renderItems(items: TodoItem[], view: CardView, activeSection: boolean) {
+    const reorder = this._reordering && activeSection && view.canMove;
+    return html`
+      <ul
+        class=${classMap({ items: true, reorder })}
+        @dragover=${reorder ? this._dragOver : nothing}
+        @drop=${reorder ? this._drop : nothing}
+      >
+        ${repeat(
+          items,
+          (item) => item.uid,
+          (item, index) => this._renderItem(item, index, view, reorder),
+        )}
+      </ul>
+    `;
+  }
+
+  private _renderItem(item: TodoItem, index: number, view: CardView, reorder: boolean): TemplateResult {
+    const done = item.status === TodoItemStatus.Completed;
+    const interactive = view.canUpdate;
+    const label = done ? S.markActive(item.summary) : S.markDone(item.summary);
+    return html`
+      <li
+        class=${classMap({
+          item: true,
+          done,
+          interactive,
+          dragging: this._dragUid === item.uid,
+          "drop-before": this._dropIndex === index && this._dragUid !== item.uid,
+        })}
+        data-uid=${item.uid}
+        data-index=${index}
+        draggable=${reorder ? "true" : "false"}
+        @dragstart=${reorder ? this._dragStart : nothing}
+        @dragend=${reorder ? this._dragEnd : nothing}
+      >
+        <label class="check">
+          <input
+            type="checkbox"
+            .checked=${done}
+            .disabled=${!interactive}
+            aria-label=${label}
+            data-uid=${item.uid}
+            @change=${this._checkboxChanged}
+          />
+          <span class="box" aria-hidden="true">${uiIcon("check", 14)}</span>
+        </label>
+        ${interactive
+          ? html`<button class="summary" data-uid=${item.uid} @click=${this._itemTapped}>${item.summary}</button>`
+          : html`<span class="summary">${item.summary}</span>`}
+        ${reorder
+          ? html`
+              <button
+                class="icon-btn handle"
+                aria-label=${S.dragHandle(item.summary)}
+                title=${S.dragHandle(item.summary)}
+                data-uid=${item.uid}
+                data-index=${index}
+                @keydown=${this._handleKeydown}
+              >
+                ${uiIcon("grip-vertical", 20)}
+              </button>
+            `
+          : nothing}
+      </li>
+    `;
+  }
+
+  private _renderDialog(view: CardView) {
+    const dialog = this._dialog;
+    if (!dialog) {
+      return nothing;
+    }
+    if (dialog.kind === "edit") {
+      return html`
+        <dialog class="dialog" @close=${this._closeDialog} @cancel=${this._closeDialog}>
+          <form method="dialog" @submit=${this._saveEdit}>
+            <h3>${S.editTitle}</h3>
+            <label class="field">
+              <span>${S.editLabel}</span>
+              <input name="summary" type="text" required autofocus .value=${dialog.item.summary} />
+            </label>
+            <div class="actions">
+              ${view.canDelete
+                ? html`<button type="button" class="danger text" @click=${this._deleteFromDialog}>${S.delete}</button>`
+                : nothing}
+              <span class="spacer"></span>
+              <button type="button" class="text" @click=${this._closeDialog}>${S.cancel}</button>
+              <button type="submit" class="primary">${S.save}</button>
+            </div>
+          </form>
+        </dialog>
+      `;
+    }
+    return html`
+      <dialog class="dialog" @close=${this._closeDialog} @cancel=${this._closeDialog}>
+        <h3>${S.clearConfirmTitle}</h3>
+        <p>${S.clearConfirmText(dialog.uids.length)}</p>
+        <div class="actions">
+          <span class="spacer"></span>
+          <button type="button" class="text" @click=${this._closeDialog}>${S.cancel}</button>
+          <button type="button" class="primary danger-bg" @click=${this._clearCompleted}>${S.delete}</button>
+        </div>
+      </dialog>
+    `;
+  }
+
+  protected override updated(changed: PropertyValues): void {
+    if (changed.has("_dialog") && this._dialog) {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog");
+      if (dialog && !dialog.open) {
+        dialog.showModal();
+        dialog.querySelector<HTMLInputElement>("input")?.select();
+      }
+    }
+  }
+
+  private _item(uid: string | undefined): TodoItem | undefined {
+    return uid ? this._items?.find((item) => item.uid === uid) : undefined;
+  }
+
+  private _submitAdd = async (ev: SubmitEvent) => {
+    ev.preventDefault();
+    const form = ev.currentTarget as HTMLFormElement;
+    const input = form.elements.namedItem("summary") as HTMLInputElement;
+    const summary = input.value.trim();
+    if (!summary || !this.hass || !this._config) {
+      return;
+    }
+    input.value = "";
+    await createItem(this.hass, this._config.entity, summary);
+    input.focus();
+  };
+
+  private _checkboxChanged = (ev: Event) => {
+    const input = ev.currentTarget as HTMLInputElement;
+    void this._toggleItem(this._item(input.dataset.uid));
+  };
+
+  private _itemTapped = (ev: Event) => {
+    const uid = (ev.currentTarget as HTMLElement).dataset.uid;
+    const item = this._item(uid);
+    if (!item) {
+      return;
+    }
+    if (this._config!.itemTapAction === "edit") {
+      this._dialog = { kind: "edit", item };
+    } else {
+      void this._toggleItem(item);
+    }
+  };
+
+  private async _toggleItem(item: TodoItem | undefined): Promise<void> {
+    if (!item || !this.hass || !this._config) {
+      return;
+    }
+    const status =
+      item.status === TodoItemStatus.Completed ? TodoItemStatus.NeedsAction : TodoItemStatus.Completed;
+    await setItemStatus(this.hass, this._config.entity, item, status);
+  }
+
+  private _toggleExpanded = () => {
+    this._expanded = !this._expanded;
+  };
+
+  private _toggleMenu = (ev: Event) => {
+    ev.stopPropagation();
+    const menu = (ev.currentTarget as HTMLElement).dataset.menu as Menu;
+    this._menu = this._menu === menu ? null : menu;
+  };
+
+  private _onDocumentClick = () => {
+    if (this._menu) {
+      this._menu = null;
+    }
+  };
+
+  private _menuKeydown = (ev: KeyboardEvent) => {
+    if (ev.key === "Escape") {
+      this._menu = null;
+      this.renderRoot.querySelector<HTMLElement>(".menu-btn")?.focus();
+    }
+  };
+
+  private _toggleReorder = () => {
+    this._reordering = !this._reordering;
+    this._menu = null;
+    if (this._reordering) {
+      this._expanded = true;
+    }
+  };
+
+  private _confirmClear(view: CardView): void {
+    this._menu = null;
+    this._dialog = { kind: "confirm-clear", uids: view.completed.map((item) => item.uid) };
+  }
+
+  private _clearCompleted = async () => {
+    const dialog = this._dialog;
+    this._closeDialog();
+    if (dialog?.kind === "confirm-clear" && this.hass && this._config && dialog.uids.length) {
+      await deleteItems(this.hass, this._config.entity, dialog.uids);
+    }
+  };
+
+  private _closeDialog = () => {
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog");
+    if (dialog?.open) {
+      dialog.close();
+    }
+    this._dialog = null;
+  };
+
+  private _saveEdit = async (ev: SubmitEvent) => {
+    ev.preventDefault();
+    const dialog = this._dialog;
+    const form = ev.currentTarget as HTMLFormElement;
+    const summary = (form.elements.namedItem("summary") as HTMLInputElement).value.trim();
+    this._closeDialog();
+    if (dialog?.kind === "edit" && summary && summary !== dialog.item.summary && this.hass && this._config) {
+      await renameItem(this.hass, this._config.entity, dialog.item, summary);
+    }
+  };
+
+  private _deleteFromDialog = async () => {
+    const dialog = this._dialog;
+    this._closeDialog();
+    if (dialog?.kind === "edit" && this.hass && this._config) {
+      await deleteItems(this.hass, this._config.entity, [dialog.item.uid]);
+    }
+  };
+
+  private _signIn = () => {
+    navigate(INTEGRATION_PAGE);
+  };
+
+  private _dragStart = (ev: DragEvent) => {
+    const li = ev.currentTarget as HTMLElement;
+    this._dragUid = li.dataset.uid ?? null;
+    ev.dataTransfer?.setData("text/plain", this._dragUid ?? "");
+    if (ev.dataTransfer) {
+      ev.dataTransfer.effectAllowed = "move";
+    }
+  };
+
+  private _dragOver = (ev: DragEvent) => {
+    if (!this._dragUid) {
+      return;
+    }
+    ev.preventDefault();
+    const li = (ev.target as HTMLElement).closest<HTMLElement>("li.item");
+    if (!li) {
+      return;
+    }
+    const rect = li.getBoundingClientRect();
+    const index = Number(li.dataset.index);
+    this._dropIndex = ev.clientY > rect.top + rect.height / 2 ? index + 1 : index;
+  };
+
+  private _drop = (ev: DragEvent) => {
+    ev.preventDefault();
+    const uid = this._dragUid;
+    const target = this._dropIndex;
+    this._dragUid = null;
+    this._dropIndex = null;
+    if (!uid || target === null) {
+      return;
+    }
+    const active = this._view().active;
+    const from = active.findIndex((item) => item.uid === uid);
+    const to = target > from ? target - 1 : target;
+    void this._move(uid, to);
+  };
+
+  private _dragEnd = () => {
+    this._dragUid = null;
+    this._dropIndex = null;
+  };
+
+  private _handleKeydown = (ev: KeyboardEvent) => {
+    if (ev.key !== "ArrowUp" && ev.key !== "ArrowDown") {
+      return;
+    }
+    ev.preventDefault();
+    const button = ev.currentTarget as HTMLElement;
+    const uid = button.dataset.uid!;
+    const index = Number(button.dataset.index);
+    const to = ev.key === "ArrowUp" ? index - 1 : index + 1;
+    const active = this._view().active;
+    if (to < 0 || to >= active.length) {
+      return;
+    }
+    void this._move(uid, to).then(async () => {
+      await this.updateComplete;
+      this.renderRoot.querySelector<HTMLElement>(`.handle[data-uid="${uid}"]`)?.focus();
+    });
+  };
+
+  private async _move(uid: string, newIndex: number): Promise<void> {
+    if (!this.hass || !this._config || !this._items) {
+      return;
+    }
+    const { active, completed } = this._view();
+    const { order, previousUid } = previousUidAfterMove(active, uid, newIndex);
+    this._items = [...order, ...completed];
+    await moveItem(this.hass, this._config.entity, uid, previousUid);
+  }
+
+  static override styles = css`
+    :host {
+      display: block;
+    }
+    ha-card {
+      display: block;
+      position: relative;
+      height: 100%;
+      box-sizing: border-box;
+      padding-bottom: 8px;
+      color: var(--primary-text-color);
+      font-family: var(--ha-card-font-family, var(--paper-font-body1_-_font-family, inherit));
+      --la-target: 44px;
+    }
+    button {
+      font: inherit;
+      color: inherit;
+      background: none;
+      border: 0;
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+    }
+    button:focus-visible,
+    input:focus-visible {
+      outline: 2px solid var(--la-ink);
+      outline-offset: 2px;
+    }
+    .viewer button.summary,
+    .viewer .check {
+      cursor: default;
+    }
+
+    .head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 16px 12px;
+    }
+    .tile {
+      flex: none;
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      background: var(--la-accent);
+      color: var(--la-glyph);
+    }
+    .titles {
+      min-width: 0;
+    }
+    .title {
+      margin: 0;
+      font-size: var(--ha-card-header-font-size, 1.25rem);
+      font-weight: 500;
+      line-height: 1.3;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .subline {
+      margin: 2px 0 0;
+      font-size: 0.85rem;
+      color: var(--secondary-text-color);
+    }
+
+    .progress {
+      height: 4px;
+      margin: 0 16px 4px;
+      border-radius: 2px;
+      background: var(--la-tint);
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: 2px;
+      background: var(--la-accent);
+      transition: width 200ms ease;
+    }
+
+    .add {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin: 8px 16px 4px;
+      border-bottom: 2px solid var(--la-accent);
+    }
+    .add-input {
+      flex: 1;
+      min-width: 0;
+      height: var(--la-target);
+      padding: 0 4px;
+      font: inherit;
+      color: var(--primary-text-color);
+      background: transparent;
+      border: 0;
+      outline: none;
+    }
+    .add-input::placeholder {
+      color: var(--secondary-text-color);
+    }
+    .add-btn {
+      color: var(--la-ink);
+    }
+    .icon-btn {
+      width: var(--la-target);
+      height: var(--la-target);
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: var(--secondary-text-color);
+    }
+    .icon-btn:hover {
+      background: var(--la-tint);
+    }
+
+    .section {
+      padding: 4px 0 0;
+    }
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 36px;
+      padding: 0 8px 0 16px;
+    }
+    .section-head h3 {
+      margin: 0;
+      font-size: 0.8rem;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--secondary-text-color);
+    }
+    .count {
+      font-weight: 400;
+    }
+    .divider {
+      height: 1px;
+      margin: 8px 16px 0;
+      background: var(--divider-color);
+    }
+
+    .items {
+      list-style: none;
+      margin: 0;
+      padding: 0 8px;
+    }
+    .wide .items {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      column-gap: 8px;
+    }
+    .item {
+      position: relative;
+      display: flex;
+      align-items: center;
+      min-height: var(--la-target);
+      border-radius: 8px;
+    }
+    .item.interactive:hover {
+      background: var(--la-tint);
+    }
+    .check {
+      flex: none;
+      position: relative;
+      width: var(--la-target);
+      height: var(--la-target);
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+    }
+    .check input {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      opacity: 0;
+      cursor: inherit;
+    }
+    .check input:disabled {
+      cursor: default;
+    }
+    .box {
+      width: 20px;
+      height: 20px;
+      box-sizing: border-box;
+      border-radius: 5px;
+      border: 2px solid var(--secondary-text-color);
+      display: grid;
+      place-items: center;
+      color: transparent;
+      transition:
+        background 120ms ease,
+        border-color 120ms ease;
+    }
+    .check input:checked + .box {
+      background: var(--la-accent);
+      border-color: var(--la-accent);
+      color: var(--la-glyph);
+    }
+    .check input:focus-visible + .box {
+      outline: 2px solid var(--la-ink);
+      outline-offset: 2px;
+    }
+    .summary {
+      flex: 1;
+      min-width: 0;
+      min-height: var(--la-target);
+      display: flex;
+      align-items: center;
+      padding: 8px 12px 8px 0;
+      text-align: left;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+    .done .summary {
+      color: var(--secondary-text-color);
+      text-decoration: line-through;
+    }
+    .handle {
+      cursor: grab;
+      color: var(--secondary-text-color);
+    }
+    .reorder .item {
+      border: 1px dashed transparent;
+    }
+    .reorder .item.dragging {
+      opacity: 0.4;
+    }
+    .reorder .item.drop-before {
+      box-shadow: inset 0 2px 0 var(--la-accent);
+    }
+
+    .link,
+    .more {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      min-height: 36px;
+      padding: 0 12px;
+      border-radius: 18px;
+      color: var(--la-ink);
+      font-weight: 500;
+    }
+    .more {
+      margin: 2px 8px 0;
+    }
+    .link:hover,
+    .more:hover {
+      background: var(--la-tint);
+    }
+
+    .menu-wrap {
+      position: relative;
+    }
+    .menu {
+      position: absolute;
+      top: calc(100% - 4px);
+      right: 0;
+      z-index: 2;
+      min-width: 200px;
+      padding: 4px 0;
+      border-radius: var(--ha-card-border-radius, 12px);
+      background: var(--card-background-color, #fff);
+      box-shadow: var(--ha-card-box-shadow, 0 4px 16px rgba(0, 0, 0, 0.24));
+      border: 1px solid var(--divider-color);
+    }
+    .menu button {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      min-height: var(--la-target);
+      padding: 0 16px;
+      text-align: left;
+      white-space: nowrap;
+    }
+    .menu button:hover {
+      background: var(--la-tint);
+    }
+    .danger {
+      color: var(--error-color, #db4437);
+    }
+
+    .state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 20px 24px 16px;
+    }
+    .state-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: var(--la-tint);
+      color: var(--la-ink);
+    }
+    .state-icon.warn {
+      background: rgba(255, 152, 0, 0.14);
+      color: var(--warning-color, #ff9800);
+    }
+    .state h3 {
+      margin: 12px 0 4px;
+      font-size: 1rem;
+      font-weight: 500;
+    }
+    .state p {
+      margin: 0 0 12px;
+      color: var(--secondary-text-color);
+      font-size: 0.9rem;
+      max-width: 36ch;
+    }
+    .notice {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px;
+      color: var(--warning-color, #ff9800);
+    }
+
+    .primary {
+      min-height: 36px;
+      padding: 0 20px;
+      border-radius: 18px;
+      background: var(--la-accent);
+      color: var(--la-glyph);
+      font-weight: 500;
+    }
+    .primary.danger-bg {
+      background: var(--error-color, #db4437);
+      color: #fff;
+    }
+    .text {
+      min-height: 36px;
+      padding: 0 12px;
+      border-radius: 18px;
+      color: var(--la-ink);
+      font-weight: 500;
+    }
+    .text:hover,
+    .primary:hover {
+      filter: brightness(0.95);
+    }
+
+    .dialog {
+      min-width: min(320px, calc(100vw - 32px));
+      max-width: 480px;
+      padding: 20px 24px;
+      border: 0;
+      border-radius: var(--ha-dialog-border-radius, 28px);
+      background: var(--card-background-color, var(--ha-card-background, #fff));
+      color: var(--primary-text-color);
+      box-shadow: var(--ha-card-box-shadow, 0 8px 32px rgba(0, 0, 0, 0.32));
+    }
+    .dialog::backdrop {
+      background: rgba(0, 0, 0, 0.32);
+    }
+    .dialog h3 {
+      margin: 0 0 12px;
+      font-size: 1.25rem;
+      font-weight: 500;
+    }
+    .dialog p {
+      margin: 0 0 12px;
+      color: var(--secondary-text-color);
+    }
+    .field {
+      display: block;
+    }
+    .field span {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--secondary-text-color);
+      margin-bottom: 4px;
+    }
+    .field input {
+      width: 100%;
+      box-sizing: border-box;
+      height: var(--la-target);
+      padding: 0 8px;
+      font: inherit;
+      color: var(--primary-text-color);
+      background: transparent;
+      border: 0;
+      border-bottom: 2px solid var(--la-accent);
+      outline: none;
+    }
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 20px;
+    }
+    .spacer {
+      flex: 1;
+    }
+  `;
+}
+
+declare global {
+  interface Window {
+    customCards?: { type: string; name: string; description: string; preview?: boolean }[];
+  }
+}
+
+if (!customElements.get(CARD_TYPE)) {
+  customElements.define(CARD_TYPE, ListAppListCard);
+}
+
+window.customCards = window.customCards ?? [];
+if (!window.customCards.some((card) => card.type === CARD_TYPE)) {
+  window.customCards.push({
+    type: CARD_TYPE,
+    name: "ListApp list",
+    description: "A ListApp list with its colour, icon and progress.",
+    preview: true,
+  });
+}
