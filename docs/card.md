@@ -91,7 +91,8 @@ which Lit is roughly two thirds).
 | `src/strings.ts` | every user-facing string (English only — see [Open questions](#open-questions)) |
 
 Everything in `model.ts`, `config.ts`, `color.ts` and `icons.ts` is DOM-free and unit-tested under
-`frontend/test/` with vitest in node. The element itself is verified in the [harness](#harness).
+`frontend/test/` with vitest in node. The element itself has lifecycle and race tests in
+`frontend/test/card.test.ts` under happy-dom, and is checked visually in the [harness](#harness).
 
 ### Behaviour mirrors the stock to-do card
 
@@ -127,6 +128,53 @@ stock card (due dates, descriptions and the stock card's display-order option ar
 - `getCardSize` grows with the visible rows; `getGridOptions` reports 12 columns (min 6) and omits
   `rows` so the sections view sizes to content — HA's grid API takes a numeric row count, not
   `"auto"` (Copilot review comment on PR #14).
+
+### Optimistic updates
+
+Toggle and move apply their change to `_items` before the service call and undo it if the call
+rejects. The undo is **targeted**, not a snapshot restore: a toggle puts back that one item's
+previous status in whatever `_items` is *now*; a move restores the previous order but keeps each
+item's current status. That matters when two mutations overlap and both fail — the common offline
+case, where a user taps two checkboxes in a row — because a whole-array snapshot from the first
+would either clobber the second's optimistic state or (the earlier generation-counter approach)
+leave the first toggle stuck on screen until the next subscription push. Both undos are skipped
+if `_itemsVersion` moved, i.e. a subscription push replaced the list between the optimistic apply
+and the rejection: the server's list is the truth and already reflects the outcome. A successful
+call always produces a push, so a success that overlaps a failure protects itself the same way.
+
+A drop or arrow-key move for an item that's no longer active (checked off by someone else during
+the drag) is ignored rather than sent as a move-to-top of a completed item.
+
+### In-flight guard
+
+Add, rename, delete and Clear-completed are one-at-a-time writes: a second submit or click while
+the first is still pending is ignored, and the dialog's action buttons are disabled meanwhile
+(`_pending`). Without it a double-click on the confirm dialog's Delete fired two `remove_item`
+calls — the second rejected with "item not found", toasted a spurious "couldn't save", and kept
+the dialog open for items that were already gone; a double Enter in the add field created the
+item twice (Copilot review comment on PR #14). Toggle and move are deliberately *not* serialised:
+a second tap before the first resolves is meant to toggle the optimistic state back (see above).
+Clear-completed also re-filters its uids against the live list when confirmed, so an item someone
+unchecked while the dialog was open survives.
+
+### Lifecycle
+
+Disconnecting closes any open dialog or menu. A modal `<dialog>` drops out of the top layer when
+its host leaves the document without firing `close`, so `_dialog` would otherwise stay set across
+a reconnect (moving the card in the dashboard editor) with nothing visible to close. Reconnecting
+also re-subscribes, re-observes width and re-runs availability tracking; the outside-click
+listener is attached and detached with the element.
+
+### Menu direction
+
+The ⋯ menu is absolutely positioned inside `ha-card`, which has `overflow: hidden`, so a menu that
+opens downward from the Completed section's header — always at the bottom of the card — gets
+clipped whenever there's less than a row of items below it. That menu opens upward (`.menu.up`),
+which is always safe because the Completed section is never first: the header, and either the
+Active section or the all-done tile, sit above it. The Active section's menu and the header's
+Clear-completed exception open downward as before. The direction is decided by where the menu is
+rendered rather than measured at open time, so it's deterministic and testable (Copilot review
+comment on PR #14).
 
 ### Why no `ha-*` elements
 
@@ -351,12 +399,19 @@ component's own pinned requirement) — see `requirements_test.txt` and `test.ym
 matrix, which pins the same package to the version the 2026.3 plugin's `frontend` component
 requires.
 
-Card unit tests (`frontend/test/`, 88 cases): state derivation and priorities, collapse, viewer
+Card unit tests (`frontend/test/`, 103 cases): state derivation and priorities, collapse, viewer
 gating, option defaults and validation, the `avatarColor` vectors, glyph/ink contrast over all 14
 colours, icon key mapping, availability classification, move → `previous_uid`, and rename preserving
-status. These cover the DOM-free model/config/colour/icon/service-call helpers only — there is no
-automated harness that instantiates `ListAppListCard` itself; `frontend/dev/harness.js` is a manual
-visual check, not run in CI (Copilot review comment on PR #14, flagged to Garrett).
+status. `card.test.ts` mounts the real `ListAppListCard` under happy-dom (a per-file
+`@vitest-environment`; the rest of the suite stays in node) against a fake `hass` whose
+`subscribeMessage`, `callService` and `callWS` can be held pending and resolved or rejected on cue.
+It pins the race behaviour: unsubscribe on disconnect (including a subscription that resolves only
+after disconnect), pushes for a previous entity being dropped, both overlapping failed toggles
+rolling back, no rollback over a newer push, the in-flight guards, the Completed menu opening
+upward, dialog/menu closing on disconnect, a drop for an item that left the active list, a slow
+availability check landing after recovery, and the recheck interval stopping on disconnect.
+happy-dom has no layout, so `ResizeObserver` is stubbed and nothing asserts on geometry;
+`frontend/dev/harness.js` remains the visual check and is not run in CI.
 
 ## Open questions
 

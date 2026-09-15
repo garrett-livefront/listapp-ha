@@ -62,6 +62,7 @@ export class ListAppListCard extends LitElement {
   @state() private _dialog: Dialog | null = null;
   @state() private _dragUid: string | null = null;
   @state() private _dropIndex: number | null = null;
+  @state() private _pending = false;
 
   private _unsub?: Promise<() => void>;
   private _subscribedEntity?: string;
@@ -70,9 +71,9 @@ export class ListAppListCard extends LitElement {
   private _availabilityTimer?: number;
   private _checkedAvailabilityFor?: string;
   private _availabilityGeneration = 0;
-  // Guards optimistic rollback across overlapping mutations (toggle/move) — see
-  // docs/card.md#optimistic-updates. Only the most recently started mutation may roll back.
-  private _mutationGeneration = 0;
+  // Bumped on every subscription push; a failed mutation only rolls back if it hasn't moved —
+  // see docs/card.md#optimistic-updates
+  private _itemsVersion = 0;
   private _entryIdFor?: string;
   private _entryId?: string | null;
   private _paletteKey?: string;
@@ -148,6 +149,9 @@ export class ListAppListCard extends LitElement {
     this._stopAvailabilityTimer();
     // Clear the guard so reconnecting re-runs tracking instead of finding a stale match.
     this._checkedAvailabilityFor = undefined;
+    // A modal <dialog> leaves the top layer when its host is removed — see docs/card.md#lifecycle
+    this._closeDialog();
+    this._menu = null;
   }
 
   protected override willUpdate(changed: PropertyValues): void {
@@ -218,6 +222,7 @@ export class ListAppListCard extends LitElement {
     const attempt = subscribeItems(this.hass, entity, (update) => {
       if (this._subscriptionGeneration === generation && this._subscribedEntity === entity) {
         this._items = update.items;
+        this._itemsVersion++;
       }
     }).catch((err: unknown) => {
       console.warn("listapp-list-card: item subscription failed", err);
@@ -379,7 +384,7 @@ export class ListAppListCard extends LitElement {
           ${this._config!.showTitle ? html`<h2 class="title">${view.title}</h2>` : nothing}
           <p class="subline">${view.subline}</p>
         </div>
-        ${showHiddenClear ? this._renderMenu("completed", view) : nothing}
+        ${showHiddenClear ? this._renderMenu("completed", view, false) : nothing}
       </header>
     `;
   }
@@ -462,7 +467,7 @@ export class ListAppListCard extends LitElement {
             <section class="section" aria-label=${S.active}>
               <div class="section-head">
                 <h3>${activeLabel}<span class="count"> · ${view.active.length}</span></h3>
-                ${view.canMove ? this._renderMenu("active", view) : nothing}
+                ${view.canMove ? this._renderMenu("active", view, false) : nothing}
               </div>
               ${this._renderItems(view.visibleActive, view, true)}
               ${!this._reordering &&
@@ -482,7 +487,7 @@ export class ListAppListCard extends LitElement {
             <section class="section completed" aria-label=${S.completed}>
               <div class="section-head">
                 <h3>${S.completed}<span class="count"> · ${view.completed.length}</span></h3>
-                ${view.canDelete ? this._renderMenu("completed", view) : nothing}
+                ${view.canDelete ? this._renderMenu("completed", view, true) : nothing}
               </div>
               ${this._renderItems(view.completed, view, false)}
             </section>
@@ -491,7 +496,8 @@ export class ListAppListCard extends LitElement {
     `;
   }
 
-  private _renderMenu(menu: Menu, view: CardView) {
+  // `up` opens the menu above its button — see docs/card.md#menu-direction
+  private _renderMenu(menu: Menu, view: CardView, up: boolean) {
     const open = this._menu === menu;
     const label = menu === "active" ? S.active : S.completed;
     return html`
@@ -509,7 +515,7 @@ export class ListAppListCard extends LitElement {
         </button>
         ${open
           ? html`
-              <div class="menu" role="menu">
+              <div class=${classMap({ menu: true, up })} role="menu">
                 ${menu === "active"
                   ? html`<button role="menuitem" @click=${this._toggleReorder}>
                       ${this._reordering ? S.exitReorder : S.reorder}
@@ -608,11 +614,13 @@ export class ListAppListCard extends LitElement {
             </label>
             <div class="actions">
               ${view.canDelete
-                ? html`<button type="button" class="danger text" @click=${this._deleteFromDialog}>${S.delete}</button>`
+                ? html`<button type="button" class="danger text" .disabled=${this._pending} @click=${this._deleteFromDialog}>
+                    ${S.delete}
+                  </button>`
                 : nothing}
               <span class="spacer"></span>
               <button type="button" class="text" @click=${this._closeDialog}>${S.cancel}</button>
-              <button type="submit" class="primary">${S.save}</button>
+              <button type="submit" class="primary" .disabled=${this._pending}>${S.save}</button>
             </div>
           </form>
         </dialog>
@@ -625,7 +633,9 @@ export class ListAppListCard extends LitElement {
         <div class="actions">
           <span class="spacer"></span>
           <button type="button" class="text" @click=${this._closeDialog}>${S.cancel}</button>
-          <button type="button" class="primary danger-bg" @click=${this._clearCompleted}>${S.delete}</button>
+          <button type="button" class="primary danger-bg" .disabled=${this._pending} @click=${this._clearCompleted}>
+            ${S.delete}
+          </button>
         </div>
       </dialog>
     `;
@@ -650,15 +660,25 @@ export class ListAppListCard extends LitElement {
     const form = ev.currentTarget as HTMLFormElement;
     const input = form.elements.namedItem("summary") as HTMLInputElement;
     const summary = input.value.trim();
-    if (!summary || !this.hass || !this._config) {
+    if (!summary || !this.hass || !this._config || this._pending) {
       return;
     }
     const { hass, _config: config } = this;
-    if (await this._call(() => createItem(hass, config.entity, summary))) {
+    if (await this._guarded(() => createItem(hass, config.entity, summary))) {
       input.value = "";
     }
     input.focus();
   };
+
+  // Serialises the card's one-at-a-time writes (add, rename, delete, clear) — see docs/card.md#in-flight-guard
+  private async _guarded(action: () => Promise<unknown>): Promise<boolean> {
+    this._pending = true;
+    try {
+      return await this._call(action);
+    } finally {
+      this._pending = false;
+    }
+  }
 
   private _checkboxChanged = (ev: Event) => {
     const input = ev.currentTarget as HTMLInputElement;
@@ -687,13 +707,11 @@ export class ListAppListCard extends LitElement {
     const status =
       item.status === TodoItemStatus.NeedsAction ? TodoItemStatus.Completed : TodoItemStatus.NeedsAction;
     const { hass, _config: config } = this;
-    const previous = this._items;
-    const optimistic = previous?.map((it) => (it.uid === item.uid ? { ...it, status } : it));
-    this._items = optimistic;
-    const generation = ++this._mutationGeneration;
+    const version = this._itemsVersion;
+    this._items = this._items?.map((it) => (it.uid === item.uid ? { ...it, status } : it));
     if (!(await this._call(() => setItemStatus(hass, config.entity, item, status)))) {
-      if (this._mutationGeneration === generation && this._items === optimistic && this._config === config) {
-        this._items = previous;
+      if (this._itemsVersion === version && this._config === config) {
+        this._items = this._items?.map((it) => (it.uid === item.uid ? { ...it, status: item.status } : it));
       }
     }
   }
@@ -746,9 +764,14 @@ export class ListAppListCard extends LitElement {
 
   private _clearCompleted = async () => {
     const dialog = this._dialog;
-    if (dialog?.kind === "confirm-clear" && this.hass && this._config && dialog.uids.length) {
+    if (this._pending) {
+      return;
+    }
+    // Re-check against the live list: an item unchecked since the dialog opened must survive.
+    const uids = dialog?.kind === "confirm-clear" ? dialog.uids.filter((uid) => this._item(uid)?.status === TodoItemStatus.Completed) : [];
+    if (uids.length && this.hass && this._config) {
       const { hass, _config: config } = this;
-      if (!(await this._call(() => deleteItems(hass, config.entity, dialog.uids)))) {
+      if (!(await this._guarded(() => deleteItems(hass, config.entity, uids)))) {
         return;
       }
     }
@@ -777,12 +800,15 @@ export class ListAppListCard extends LitElement {
       return;
     }
     input.setCustomValidity("");
+    if (this._pending) {
+      return;
+    }
     if (dialog?.kind === "edit" && summary && summary !== dialog.item.summary && this.hass && this._config) {
       const { hass, _config: config } = this;
       // Resolve the current item by uid — a concurrent update (e.g. someone else checking it
       // off) could have changed its status since the dialog snapshot was taken.
       const current = this._item(dialog.item.uid) ?? dialog.item;
-      if (!(await this._call(() => renameItem(hass, config.entity, current, summary)))) {
+      if (!(await this._guarded(() => renameItem(hass, config.entity, current, summary)))) {
         return;
       }
     }
@@ -791,9 +817,12 @@ export class ListAppListCard extends LitElement {
 
   private _deleteFromDialog = async () => {
     const dialog = this._dialog;
+    if (this._pending) {
+      return;
+    }
     if (dialog?.kind === "edit" && this.hass && this._config) {
       const { hass, _config: config } = this;
-      if (!(await this._call(() => deleteItems(hass, config.entity, [dialog.item.uid])))) {
+      if (!(await this._guarded(() => deleteItems(hass, config.entity, [dialog.item.uid])))) {
         return;
       }
     }
@@ -872,14 +901,17 @@ export class ListAppListCard extends LitElement {
     }
     const previous = this._items;
     const { active, completed } = this._view();
+    if (!active.some((item) => item.uid === uid)) {
+      return;
+    }
     const { order, previousUid } = previousUidAfterMove(active, uid, newIndex);
-    const optimistic: TodoItem[] = [...order, ...completed];
-    this._items = optimistic;
+    this._items = [...order, ...completed];
     const { hass, _config: config } = this;
-    const generation = ++this._mutationGeneration;
+    const version = this._itemsVersion;
     if (!(await this._call(() => moveItem(hass, config.entity, uid, previousUid)))) {
-      if (this._mutationGeneration === generation && this._items === optimistic && this._config === config) {
-        this._items = previous;
+      if (this._itemsVersion === version && this._config === config && this._items) {
+        const current = new Map(this._items.map((it) => [it.uid, it]));
+        this._items = previous.map((it) => current.get(it.uid) ?? it);
       }
     }
   }
@@ -1199,6 +1231,10 @@ export class ListAppListCard extends LitElement {
       background: var(--card-background-color, #fff);
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
       border: 1px solid var(--divider-color);
+    }
+    .menu.up {
+      top: auto;
+      bottom: calc(100% + 2px);
     }
     .menu button {
       display: flex;
