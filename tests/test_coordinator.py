@@ -127,6 +127,112 @@ async def test_list_updated_renames(
     assert coordinator.data[GROCERIES_ID].my_role == "OWNER"
 
 
+async def test_list_updated_changes_color_and_icon(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    coordinator = setup_integration.runtime_data
+    assert coordinator.data[GROCERIES_ID].color is None
+    assert coordinator.data[GROCERIES_ID].icon is None
+    summary = {
+        k: v
+        for k, v in list_payload(
+            GROCERIES_ID, "Groceries", [], color="#ff0000", icon="shopping-cart"
+        ).items()
+        if k != "items"
+    }
+    summary["myRole"] = None
+    await _emit(coordinator, "list.updated", GROCERIES_ID, summary)
+    await asyncio.sleep(0.6)
+
+    assert coordinator.data[GROCERIES_ID].color == "#ff0000"
+    assert coordinator.data[GROCERIES_ID].icon == "shopping-cart"
+
+
+async def test_list_updated_preserves_color_and_icon_when_keys_absent(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    coordinator = setup_integration.runtime_data
+    summary = {
+        k: v
+        for k, v in list_payload(
+            GROCERIES_ID, "Groceries", [], color="#ff0000", icon="shopping-cart"
+        ).items()
+        if k != "items"
+    }
+    summary["myRole"] = None
+    await _emit(coordinator, "list.updated", GROCERIES_ID, summary)
+    await asyncio.sleep(0.6)
+    assert coordinator.data[GROCERIES_ID].color == "#ff0000"
+    assert coordinator.data[GROCERIES_ID].icon == "shopping-cart"
+
+    # A payload that omits color/icon entirely (older or partial event) must not
+    # be treated as clearing them.
+    partial = {k: v for k, v in summary.items() if k not in ("color", "icon")}
+    await _emit(coordinator, "list.updated", GROCERIES_ID, partial)
+    await asyncio.sleep(0.6)
+
+    assert coordinator.data[GROCERIES_ID].color == "#ff0000"
+    assert coordinator.data[GROCERIES_ID].icon == "shopping-cart"
+
+
+async def test_list_updated_clears_color_and_icon_on_explicit_null(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    coordinator = setup_integration.runtime_data
+    summary = {
+        k: v
+        for k, v in list_payload(
+            GROCERIES_ID, "Groceries", [], color="#ff0000", icon="shopping-cart"
+        ).items()
+        if k != "items"
+    }
+    summary["myRole"] = None
+    await _emit(coordinator, "list.updated", GROCERIES_ID, summary)
+    await asyncio.sleep(0.6)
+    assert coordinator.data[GROCERIES_ID].color == "#ff0000"
+
+    cleared = {**summary, "color": None, "icon": None}
+    await _emit(coordinator, "list.updated", GROCERIES_ID, cleared)
+    await asyncio.sleep(0.6)
+
+    assert coordinator.data[GROCERIES_ID].color is None
+    assert coordinator.data[GROCERIES_ID].icon is None
+
+
+async def test_stale_poll_cannot_revert_a_color_icon_update(
+    hass: HomeAssistant, setup_integration: MockConfigEntry, monkeypatch
+) -> None:
+    """A poll already fetching when list.updated arrives can't overwrite its color/icon.
+
+    Same in-flight-poll race as role demotions — Copilot review comment on PR #13, see
+    docs/architecture.md#roles.
+    """
+    coordinator = setup_integration.runtime_data
+    stale = coordinator.data[GROCERIES_ID]
+    assert stale.color is None
+    assert stale.icon is None
+
+    async def get_list(list_id: str):
+        summary = {
+            k: v
+            for k, v in list_payload(
+                GROCERIES_ID, "Groceries", [], color="#ff0000", icon="shopping-cart"
+            ).items()
+            if k != "items"
+        }
+        summary["myRole"] = None
+        await _emit(coordinator, "list.updated", GROCERIES_ID, summary)
+        await asyncio.sleep(0.6)
+        return stale
+
+    monkeypatch.setattr(coordinator.client, "async_get_list", get_list)
+
+    result = await coordinator._async_update_data()
+
+    assert result[GROCERIES_ID].color == "#ff0000"
+    assert result[GROCERIES_ID].icon == "shopping-cart"
+
+
 async def test_event_for_unselected_list_ignored(
     hass: HomeAssistant, setup_integration: MockConfigEntry
 ) -> None:

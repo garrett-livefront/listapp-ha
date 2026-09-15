@@ -1,3 +1,6 @@
 pytest-homeassistant-custom-component==0.13.365
 pytest-cov==7.1.0
 ruff==0.14.4
+# Pinned to the `frontend` component's own requirement (its manifest.json) for the HA version
+# above — the frontend dependency in our manifest.json needs this to import. See docs/card.md.
+home-assistant-frontend==20260826.7

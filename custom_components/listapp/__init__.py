@@ -14,6 +14,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import ListAppAuthError, ListAppClient, ListAppError, ListAppUnavailableError
 from .const import CONF_READ_ONLY, CONF_SELECTED_LISTS, MAX_SELECTED_LISTS, SCOPE_WRITE
 from .coordinator import ListAppConfigEntry, ListAppCoordinator
+from .frontend import async_register_frontend
 from .oauth import async_ensure_implementation
 
 PLATFORMS: list[Platform] = [Platform.TODO]
@@ -38,6 +39,7 @@ async def _async_migrate_selection(
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ListAppConfigEntry) -> bool:
+    await async_register_frontend(hass)
     await async_ensure_implementation(hass)
     implementation = await config_entry_oauth2_flow.async_get_config_entry_implementation(
         hass, entry
