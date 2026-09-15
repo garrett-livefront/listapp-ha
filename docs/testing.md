@@ -62,8 +62,7 @@ paths are genuinely impractical to exercise in CI.
 ## CI
 
 `.github/workflows/test.yml` and `lint.yml` run on every pull request and on push to `main` and
-`hacs-integration`. `.github/workflows/validate.yml` runs `hassfest` (blocking) and the HACS
-validation action (non-blocking — see its workflow file for why).
+`hacs-integration`. `.github/workflows/validate.yml` runs `hassfest` and the HACS validation action, both blocking.
 
 `hassfest` and the HACS action are deliberately referenced by branch (`@master`/`@main`), not a
 pinned SHA, despite that being the general supply-chain-safe default: both validate against
