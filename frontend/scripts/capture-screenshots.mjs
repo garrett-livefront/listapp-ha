@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Captures README screenshots from the dev harness via CDP. See CONTRIBUTING.md#readme-screenshots.
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -9,7 +9,6 @@ import { setTimeout as sleep } from "node:timers/promises";
 const CHROME =
   process.env.CHROME_PATH ||
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const PORT = 9333;
 const HARNESS_URL = "http://127.0.0.1:8000/";
 const OUT_DIR = new URL("../../docs/images/", import.meta.url);
 
@@ -62,7 +61,10 @@ async function main() {
   const userDataDir = await mkdtemp(join(tmpdir(), "listapp-card-capture-"));
   const chrome = spawn(CHROME, [
     "--headless=new",
-    `--remote-debugging-port=${PORT}`,
+    // Port 0: Chrome picks an ephemeral port and writes it to DevToolsActivePort in the
+    // profile dir, so this script only ever talks to the instance it just spawned — a
+    // fixed port could otherwise land on an unrelated already-listening browser.
+    "--remote-debugging-port=0",
     `--user-data-dir=${userDataDir}`,
     "--hide-scrollbars",
     "--force-color-profile=srgb",
@@ -70,8 +72,13 @@ async function main() {
   ]);
 
   try {
+    const port = await waitFor(async () => {
+      const contents = await readFile(join(userDataDir, "DevToolsActivePort"), "utf8");
+      const [portLine] = contents.split("\n");
+      return portLine ? Number(portLine) : null;
+    });
     const target = await waitFor(async () => {
-      const res = await fetch(`http://127.0.0.1:${PORT}/json/new?${HARNESS_URL}`, { method: "PUT" });
+      const res = await fetch(`http://127.0.0.1:${port}/json/new?${HARNESS_URL}`, { method: "PUT" });
       return res.ok ? res.json() : null;
     });
     const ws = new WebSocket(target.webSocketDebuggerUrl);
@@ -143,8 +150,15 @@ async function main() {
 
     ws.close();
   } finally {
+    // Register the exit listener before killing — if Chrome already exited (e.g. it
+    // crashed), the promise resolves immediately from `exitCode`/`signalCode` instead of
+    // waiting on an "exit" event that already fired.
+    const exited =
+      chrome.exitCode !== null || chrome.signalCode !== null
+        ? Promise.resolve()
+        : new Promise((resolve) => chrome.once("exit", resolve));
     chrome.kill();
-    await new Promise((resolve) => chrome.once("exit", resolve));
+    await exited;
     // Best-effort: Chrome can still hold a lock file open for a moment after exit.
     await rm(userDataDir, { recursive: true, force: true }).catch(() => {});
   }
