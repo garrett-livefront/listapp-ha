@@ -5,7 +5,7 @@
 [![Validate](https://github.com/garrett-livefront/listapp-ha/actions/workflows/validate.yml/badge.svg)](https://github.com/garrett-livefront/listapp-ha/actions/workflows/validate.yml)
 [![Test](https://github.com/garrett-livefront/listapp-ha/actions/workflows/test.yml/badge.svg)](https://github.com/garrett-livefront/listapp-ha/actions/workflows/test.yml)
 [![Minimum Home Assistant version](https://img.shields.io/badge/Home%20Assistant-2026.3.0%2B-41BDF5.svg)](https://www.home-assistant.io/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/garrett-livefront/listapp-ha/blob/main/LICENSE)
 
 A Home Assistant custom integration that links a ListApp account and exposes its lists as
 `todo` entities, updated live as they change.
@@ -41,39 +41,6 @@ This repository is not yet in the HACS default store — add it as a custom repo
 3. Use the button above, or **Settings → Devices & services → Add integration → ListApp**, then
    sign in with Google or Apple in the browser window that opens and pick the lists to add.
 
-## Local development
-
-To try the integration before it's on HACS:
-
-1. Copy `custom_components/listapp` into your Home Assistant config directory's
-   `custom_components/` folder.
-2. Restart Home Assistant.
-3. **Settings → Devices & services → Add integration → ListApp**, then sign in to ListApp in the
-   browser window that opens.
-
-Each ListApp list shows up as a `todo.listapp_<list>` entity. **Configure** on the integration
-offers read-only mode, which asks you to sign in again with narrower permissions.
-
-### Linking against a local API and Hydra
-
-1. In `listapp-api`, start Hydra and register the client (see its `docs/oauth.md`, "Local setup"):
-   `docker compose --profile oauth up -d`, then `./scripts/oauth/register-ha-client.sh`, and run
-   the API.
-2. Point the integration at them with environment variables in the environment Home Assistant
-   runs in. They're read when the integration loads, so restart after changing them:
-
-   ```bash
-   export LISTAPP_API_BASE_URL=http://localhost:8080/api/v1
-   export LISTAPP_OAUTH_BASE_URL=http://localhost:4444
-   ```
-
-   Use your API's actual port. From a Home Assistant container, `localhost` is the container, so
-   use the host's address instead.
-3. Add the integration as above. The authorize page opens in your browser against local Hydra,
-   and Hydra redirects to `my.home-assistant.io`, which needs your Home Assistant URL set there.
-
-How auth, entities, and errors work: [`docs/architecture.md`](docs/architecture.md).
-
 ## What data is shared
 
 Signing in grants this integration OAuth scopes to read and write your ListApp lists
@@ -98,6 +65,12 @@ the integration from Home Assistant.
 
 Open an issue: <https://github.com/garrett-livefront/listapp-ha/issues>.
 
+## Contributing
+
+Want to help? See
+[CONTRIBUTING.md](https://github.com/garrett-livefront/listapp-ha/blob/main/CONTRIBUTING.md).
+
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see
+[LICENSE](https://github.com/garrett-livefront/listapp-ha/blob/main/LICENSE).
