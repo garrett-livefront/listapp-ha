@@ -69,6 +69,10 @@ export class ListAppListCard extends LitElement {
   private _resize?: ResizeObserver;
   private _availabilityTimer?: number;
   private _checkedAvailabilityFor?: string;
+  private _availabilityGeneration = 0;
+  // Guards optimistic rollback across overlapping mutations (toggle/move) — see
+  // docs/card.md#optimistic-updates. Only the most recently started mutation may roll back.
+  private _mutationGeneration = 0;
   private _entryIdFor?: string;
   private _entryId?: string | null;
   private _paletteKey?: string;
@@ -149,6 +153,9 @@ export class ListAppListCard extends LitElement {
       // later recreation under the same ID is treated as fresh, not skipped as already-subscribed.
       this._unsubscribe();
       this._items = undefined;
+      // A recreation under the same entity_id can belong to a different config entry.
+      this._entryIdFor = undefined;
+      this._entryId = undefined;
     } else if (this._subscribedEntity !== this._config.entity || (!this._unsub && entityPresent)) {
       this._items = undefined;
       this._subscribe();
@@ -239,6 +246,9 @@ export class ListAppListCard extends LitElement {
     if (!this.hass || !entity || !key) {
       return;
     }
+    // A slower overlapping check (the 30s interval can start one before an earlier
+    // one resolves) must not overwrite a result from a check started after it.
+    const generation = ++this._availabilityGeneration;
     let availability: Availability;
     try {
       const [entries, flows, entryId] = await Promise.all([
@@ -250,7 +260,11 @@ export class ListAppListCard extends LitElement {
     } catch {
       availability = classifyAvailability(this._stateObj(), undefined, undefined);
     }
-    if (this._config?.entity === entity && this._checkedAvailabilityFor === key) {
+    if (
+      this._availabilityGeneration === generation &&
+      this._config?.entity === entity &&
+      this._checkedAvailabilityFor === key
+    ) {
       this._availability = availability;
     }
   }
@@ -263,10 +277,11 @@ export class ListAppListCard extends LitElement {
     if (this._entryIdFor !== entity) {
       try {
         this._entryId = (await fetchEntityRegistryEntry(this.hass, entity)).config_entry_id ?? null;
+        // Only cache a successful lookup — see docs/card.md#auth-vs-transient-unavailability.
+        this._entryIdFor = entity;
       } catch {
-        this._entryId = undefined;
+        return undefined;
       }
-      this._entryIdFor = entity;
     }
     return this._entryId;
   }
@@ -330,6 +345,11 @@ export class ListAppListCard extends LitElement {
   }
 
   private _renderHeader(view: CardView, iconKey: string | null | undefined) {
+    // With completed items hidden (show_completed: false), the Completed section — and its
+    // Clear-completed menu — never renders. Surface it here instead, near the top of the card
+    // where a downward-opening menu has room, rather than inside the all-done tile where
+    // ha-card's `overflow: hidden` could clip it (Copilot review comment on PR #14).
+    const showHiddenClear = !view.showCompleted && view.canDelete && view.completed.length > 0;
     return html`
       <header class="head">
         <div class="tile" aria-hidden="true">${listIcon(iconKey, 20)}</div>
@@ -337,6 +357,7 @@ export class ListAppListCard extends LitElement {
           ${this._config!.showTitle ? html`<h2 class="title">${view.title}</h2>` : nothing}
           <p class="subline">${view.subline}</p>
         </div>
+        ${showHiddenClear ? this._renderMenu("completed", view) : nothing}
       </header>
     `;
   }
@@ -413,7 +434,6 @@ export class ListAppListCard extends LitElement {
               <div class="state-icon done">${uiIcon("check", 24)}</div>
               <h3>${S.allDoneTitle}</h3>
               <p>${view.showCompleted ? S.allDoneBody : S.allDoneHidden(view.done)}</p>
-              ${!view.showCompleted && view.canDelete ? this._renderMenu("completed", view) : nothing}
             </div>
           `
         : html`
@@ -648,8 +668,9 @@ export class ListAppListCard extends LitElement {
     const previous = this._items;
     const optimistic = previous?.map((it) => (it.uid === item.uid ? { ...it, status } : it));
     this._items = optimistic;
+    const generation = ++this._mutationGeneration;
     if (!(await this._call(() => setItemStatus(hass, config.entity, item, status)))) {
-      if (this._items === optimistic && this._config === config) {
+      if (this._mutationGeneration === generation && this._items === optimistic && this._config === config) {
         this._items = previous;
       }
     }
@@ -727,7 +748,10 @@ export class ListAppListCard extends LitElement {
     const summary = (form.elements.namedItem("summary") as HTMLInputElement).value.trim();
     if (dialog?.kind === "edit" && summary && summary !== dialog.item.summary && this.hass && this._config) {
       const { hass, _config: config } = this;
-      if (!(await this._call(() => renameItem(hass, config.entity, dialog.item, summary)))) {
+      // Resolve the current item by uid — a concurrent update (e.g. someone else checking it
+      // off) could have changed its status since the dialog snapshot was taken.
+      const current = this._item(dialog.item.uid) ?? dialog.item;
+      if (!(await this._call(() => renameItem(hass, config.entity, current, summary)))) {
         return;
       }
     }
@@ -821,8 +845,9 @@ export class ListAppListCard extends LitElement {
     const optimistic: TodoItem[] = [...order, ...completed];
     this._items = optimistic;
     const { hass, _config: config } = this;
+    const generation = ++this._mutationGeneration;
     if (!(await this._call(() => moveItem(hass, config.entity, uid, previousUid)))) {
-      if (this._items === optimistic && this._config === config) {
+      if (this._mutationGeneration === generation && this._items === optimistic && this._config === config) {
         this._items = previous;
       }
     }
@@ -883,6 +908,7 @@ export class ListAppListCard extends LitElement {
       color: var(--la-glyph);
     }
     .titles {
+      flex: 1;
       min-width: 0;
     }
     .title {

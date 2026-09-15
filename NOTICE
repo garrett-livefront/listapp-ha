@@ -10,9 +10,8 @@ Home Assistant frontend — Apache License 2.0
   frontend/src/listapp-list-card.ts and frontend/src/ha.ts adapt the behaviour, service calls,
   websocket messages and interaction model of src/panels/lovelace/cards/hui-todo-list-card.ts and
   src/data/todo.ts. No large verbatim passages are reproduced; the structure and semantics are
-  derived from those files. The full licence text is at
-  https://www.apache.org/licenses/LICENSE-2.0; no Home Assistant source is reproduced in this
-  repository or the built bundle.
+  derived from those files; no Home Assistant source is reproduced in this repository or the built
+  bundle. The full licence text is bundled at LICENSE-APACHE-2.0.
 
 Lit — BSD 3-Clause License
   Copyright (c) 2017 Google LLC. https://github.com/lit/lit
