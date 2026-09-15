@@ -12,15 +12,27 @@ permissions:
 
 jobs:
   test:
+    name: test (HA ${{ matrix.ha }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ha: current pin
+            python: "3.14"
+            requirements: -r requirements_test.txt
+          # Minimum supported HA — see docs/testing.md#minimum-home-assistant-version
+          - ha: "2026.3"
+            python: "3.14"
+            requirements: pytest-homeassistant-custom-component==0.13.320 pytest-cov==7.0.0
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python }}
           cache: pip
 
-      - run: pip install -r requirements_test.txt
+      - run: pip install ${{ matrix.requirements }}
 
       - run: pytest
