@@ -17,7 +17,7 @@ Each `todo.listapp_<list>` entity exposes on `extra_state_attributes`:
 | `list_id` | `str` | the list's id |
 | `color` | `str \| None` | `ListResponse.color` (a hex string), or `None` |
 | `icon` | `str \| None` | `ListResponse.icon` (an icon key, e.g. `shopping-cart`), or `None` |
-| `role` | `str \| None` | `my_role` lower-cased (`owner`/`editor`/`viewer`), or `None` if unknown |
+| `role` | `str \| None` | `my_role` lower-cased when it's `OWNER`/`EDITOR`/`VIEWER`, else `None` |
 
 No owner/sharer name is exposed — the card doesn't show "shared by" (Garrett decided this; see the
 plan). Names are snake_case and stable; the card depends on them, so a rename here is a breaking
@@ -39,7 +39,9 @@ recorder database for no benefit.
 in `hass.data[DOMAIN]`, which survives entry reloads and multiple config entries (there's no
 per-instance "unregister" story for either `async_register_static_paths` or `add_extra_js_url`, and
 HA doesn't need one: unlike a config entry's own resources, this reflects the *integration* being
-installed, not any one account being linked).
+installed, not any one account being linked). The flag is set only after registration succeeds, and
+an `asyncio.Lock` in the same dict serializes concurrent config-entry setups so two entries can't
+both pass the flag check before either has registered (Copilot review comment on PR #13).
 
 - `custom_components/listapp/frontend/listapp-list-card.js` is served at
   `/listapp_frontend/listapp-list-card.js` via `hass.http.async_register_static_paths`

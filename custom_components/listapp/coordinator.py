@@ -226,12 +226,14 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
         lst = data.get(list_id)
         if lst is None:
             return
+        color = payload["color"] if "color" in payload else lst.color
+        icon = payload["icon"] if "icon" in payload else lst.icon
         data[lst.id] = replace(
             lst,
             title=title,
             owner_id=owner_id,
-            color=payload.get("color"),
-            icon=payload.get("icon"),
+            color=color,
+            icon=icon,
         )
 
     def _apply_list_deleted(self, data: dict, list_id: str, payload: dict) -> None:

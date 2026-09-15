@@ -27,22 +27,39 @@ if (!customElements.get("listapp-list-card")) {
         this.appendChild(this._card);
       }
       if (!stateObj) {
-        this._card.innerHTML = `<div style="padding: 16px;">Entity not found: ${this._config.entity}</div>`;
+        this._card.replaceChildren();
+        const notFound = document.createElement("div");
+        notFound.style.padding = "16px";
+        notFound.textContent = `Entity not found: ${this._config.entity}`;
+        this._card.appendChild(notFound);
         return;
       }
       const attrs = stateObj.attributes || {};
       const name = attrs.friendly_name || this._config.entity;
       const count = stateObj.state;
-      this._card.innerHTML = `
-        <div style="padding: 16px;">
-          <div><strong>${name}</strong></div>
-          <div>${count} items</div>
-          <div>list_id: ${attrs.list_id ?? ""}</div>
-          <div>color: ${attrs.color ?? ""}</div>
-          <div>icon: ${attrs.icon ?? ""}</div>
-          <div>role: ${attrs.role ?? ""}</div>
-        </div>
-      `;
+      this._card.replaceChildren();
+      const wrapper = document.createElement("div");
+      wrapper.style.padding = "16px";
+      const rows = [
+        ["strong", name],
+        ["div", `${count} items`],
+        ["div", `list_id: ${attrs.list_id ?? ""}`],
+        ["div", `color: ${attrs.color ?? ""}`],
+        ["div", `icon: ${attrs.icon ?? ""}`],
+        ["div", `role: ${attrs.role ?? ""}`],
+      ];
+      for (const [tag, text] of rows) {
+        const el = document.createElement(tag === "strong" ? "div" : tag);
+        if (tag === "strong") {
+          const strong = document.createElement("strong");
+          strong.textContent = text;
+          el.appendChild(strong);
+        } else {
+          el.textContent = text;
+        }
+        wrapper.appendChild(el);
+      }
+      this._card.appendChild(wrapper);
     }
   }
 

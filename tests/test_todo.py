@@ -279,6 +279,7 @@ async def test_role_demotion_updates_supported_features(
         ("EDITOR", "editor", None, None),
         ("VIEWER", "viewer", "#00ff00", None),
         (None, None, None, "list"),
+        ("ADMIN", None, None, None),
     ],
 )
 async def test_extra_state_attributes(

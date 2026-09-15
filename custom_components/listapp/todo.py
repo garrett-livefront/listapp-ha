@@ -26,7 +26,7 @@ from .api import (
     ListAppList,
     ListAppNotFoundError,
 )
-from .const import ATTR_COLOR, ATTR_ICON, ATTR_LIST_ID, ATTR_ROLE, DOMAIN
+from .const import ATTR_COLOR, ATTR_ICON, ATTR_LIST_ID, ATTR_ROLE, DOMAIN, KNOWN_ROLES
 from .coordinator import ListAppConfigEntry, ListAppCoordinator
 
 PARALLEL_UPDATES = 1
@@ -107,7 +107,7 @@ class ListAppTodoEntity(CoordinatorEntity[ListAppCoordinator], TodoListEntity):
             ATTR_LIST_ID: self._list_id,
             ATTR_COLOR: self._list.color,
             ATTR_ICON: self._list.icon,
-            ATTR_ROLE: self._list.my_role.lower() if self._list.my_role else None,
+            ATTR_ROLE: self._list.my_role.lower() if self._list.my_role in KNOWN_ROLES else None,
         }
 
     @property
