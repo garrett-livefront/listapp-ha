@@ -60,10 +60,11 @@ Connected apps screen (coming soon).
 ## Troubleshooting
 
 - **Reauthentication required**: Home Assistant asks you to sign in again when ListApp refuses to
-  refresh your session (your grant expired or was revoked) or when you change read-only mode in
-  **Configure** — the previous grant no longer matches. Signing in again restores it. A transient
-  network or server error does not trigger this — it shows the integration as unavailable and
-  retries instead.
+  refresh your session or rejects an API request as unauthenticated (your grant expired or was
+  revoked), or when you change read-only mode in **Configure** — the previous grant no longer
+  matches. Signing in again restores it. A transient network or server error on a list refresh
+  does not trigger this — it shows the integration as unavailable and retries instead; a dropped
+  live-updates connection falls back to polling without affecting entity availability.
 - **Linking gets stuck or errors after signing in**: check that the **My Home Assistant**
   integration is enabled (see Requirements) and that the URL saved for your browser at
   [my.home-assistant.io](https://my.home-assistant.io/) is correct.
