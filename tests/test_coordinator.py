@@ -127,6 +127,27 @@ async def test_list_updated_renames(
     assert coordinator.data[GROCERIES_ID].my_role == "OWNER"
 
 
+async def test_list_updated_changes_color_and_icon(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    coordinator = setup_integration.runtime_data
+    assert coordinator.data[GROCERIES_ID].color is None
+    assert coordinator.data[GROCERIES_ID].icon is None
+    summary = {
+        k: v
+        for k, v in list_payload(
+            GROCERIES_ID, "Groceries", [], color="#ff0000", icon="shopping-cart"
+        ).items()
+        if k != "items"
+    }
+    summary["myRole"] = None
+    await _emit(coordinator, "list.updated", GROCERIES_ID, summary)
+    await asyncio.sleep(0.6)
+
+    assert coordinator.data[GROCERIES_ID].color == "#ff0000"
+    assert coordinator.data[GROCERIES_ID].icon == "shopping-cart"
+
+
 async def test_event_for_unselected_list_ignored(
     hass: HomeAssistant, setup_integration: MockConfigEntry
 ) -> None:

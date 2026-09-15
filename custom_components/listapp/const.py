@@ -19,6 +19,11 @@ SCOPE_WRITE: Final = "lists:write"
 
 ROLE_VIEWER: Final = "VIEWER"
 
+ATTR_LIST_ID: Final = "list_id"
+ATTR_COLOR: Final = "color"
+ATTR_ICON: Final = "icon"
+ATTR_ROLE: Final = "role"
+
 CONF_READ_ONLY: Final = "read_only"
 CONF_SELECTED_LISTS: Final = "selected_lists"
 

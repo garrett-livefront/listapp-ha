@@ -35,7 +35,12 @@ def item_payload(item_id: str, content: str, position: int, checked: bool = Fals
 
 
 def list_payload(
-    list_id: str, title: str, items: list[dict[str, Any]], my_role: str | None = "OWNER"
+    list_id: str,
+    title: str,
+    items: list[dict[str, Any]],
+    my_role: str | None = "OWNER",
+    color: str | None = None,
+    icon: str | None = None,
 ) -> dict:
     payload = {
         "id": list_id,
@@ -43,6 +48,8 @@ def list_payload(
         "ownerDisplayName": "Sam",
         "ownerAvatarColor": None,
         "title": title,
+        "color": color,
+        "icon": icon,
         "createdAt": "2026-09-01T00:00:00Z",
         "updatedAt": "2026-09-01T00:00:00Z",
         "editorsCanManageSharing": False,

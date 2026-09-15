@@ -272,6 +272,96 @@ async def test_role_demotion_updates_supported_features(
     assert hass.states.get(entity_id).attributes[ATTR_SUPPORTED_FEATURES] == 0
 
 
+@pytest.mark.parametrize(
+    ("role", "expected_role", "color", "icon"),
+    [
+        ("OWNER", "owner", "#ff0000", "shopping-cart"),
+        ("EDITOR", "editor", None, None),
+        ("VIEWER", "viewer", "#00ff00", None),
+        (None, None, None, "list"),
+    ],
+)
+async def test_extra_state_attributes(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    role: str | None,
+    expected_role: str | None,
+    color: str | None,
+    icon: str | None,
+) -> None:
+    register_lists(
+        aioclient_mock,
+        [list_payload(GROCERIES_ID, "Groceries", [], my_role=role, color=color, icon=icon)],
+    )
+    config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    state = hass.states.get(todo_entity_id(hass, GROCERIES_ID))
+    assert state.attributes["list_id"] == GROCERIES_ID
+    assert state.attributes["color"] == color
+    assert state.attributes["icon"] == icon
+    assert state.attributes["role"] == expected_role
+
+
+async def test_extra_state_attributes_update_after_refresh(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    register_lists(aioclient_mock, [list_payload(GROCERIES_ID, "Groceries", [])])
+    config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    entity_id = todo_entity_id(hass, GROCERIES_ID)
+    assert hass.states.get(entity_id).attributes["color"] is None
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(
+        f"{API_BASE_URL}/lists/{GROCERIES_ID}",
+        json=list_payload(GROCERIES_ID, "Groceries", [], color="#123456", icon="cart"),
+    )
+    await config_entry.runtime_data.async_request_refresh()
+    await hass.async_block_till_done()
+
+    assert hass.states.get(entity_id).attributes["color"] == "#123456"
+    assert hass.states.get(entity_id).attributes["icon"] == "cart"
+
+
+async def test_extra_state_attributes_update_from_stream_event(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    register_lists(aioclient_mock, [list_payload(GROCERIES_ID, "Groceries", [])])
+    config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    entity_id = todo_entity_id(hass, GROCERIES_ID)
+    coordinator = config_entry.runtime_data
+
+    summary = {
+        k: v
+        for k, v in list_payload(
+            GROCERIES_ID, "Groceries", [], color="#abcdef", icon="basket"
+        ).items()
+        if k != "items"
+    }
+    summary["myRole"] = None
+    coordinator._handle_stream_event(
+        StreamEvent(
+            event="list.updated",
+            data=json.dumps(list_change_event("list.updated", GROCERIES_ID, summary)),
+        )
+    )
+    await asyncio.sleep(0.6)
+    await hass.async_block_till_done()
+
+    assert hass.states.get(entity_id).attributes["color"] == "#abcdef"
+    assert hass.states.get(entity_id).attributes["icon"] == "basket"
+
+
 async def test_list_removed_on_poll_404(
     hass: HomeAssistant,
     entity_id: str,
