@@ -1268,8 +1268,8 @@ window.customCards = window.customCards ?? [];
 if (!window.customCards.some((card) => card.type === CARD_TYPE)) {
   window.customCards.push({
     type: CARD_TYPE,
-    name: "ListApp list",
-    description: "A ListApp list with its colour, icon and progress.",
+    name: "Listapp list",
+    description: "A Listapp list with its colour, icon and progress.",
     preview: true,
   });
 }

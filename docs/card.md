@@ -1,6 +1,6 @@
 # Lovelace card
 
-A branded "ListApp list" card, design variant 1b "quiet rail", ships **inside** this integration so a
+A branded "Listapp list" card, design variant 1b "quiet rail", ships **inside** this integration so a
 single HACS install gives users both the entities and the card — no separate HACS frontend
 repository or manual resource add. Plan and decisions:
 <https://forge.radhangs.com/listapp-ha-integration-plan-b2h9rr/>.
@@ -150,10 +150,10 @@ Derived in `model.ts#deriveView`, in priority order:
 | State | When | Shows |
 | --- | --- | --- |
 | `missing` | entity not in `hass.states` | warning row "Entity not found" |
-| `unavailable_auth` | entity `unavailable`/`unknown` **and** a `listapp` reauth flow is in progress (or the config entry is in `setup_error` with an auth-flavoured reason) | replaces header and body: warning triangle, "List unavailable", "ListApp needs you to sign in again…", **Sign in** |
-| `unavailable_transient` | `unavailable`/`unknown` otherwise | same layout with a cloud-off icon, "Can't reach ListApp right now", **Check integration** |
+| `unavailable_auth` | entity `unavailable`/`unknown` **and** a `listapp` reauth flow is in progress (or the config entry is in `setup_error` with an auth-flavoured reason) | replaces header and body: warning triangle, "List unavailable", "Listapp needs you to sign in again…", **Sign in** |
+| `unavailable_transient` | `unavailable`/`unknown` otherwise | same layout with a cloud-off icon, "Can't reach Listapp right now", **Check integration** |
 | `loading` | subscribed, no message yet | header only |
-| `empty` | zero items | check-square tile, "Nothing on this list", "Add the first item above, or ask Assist to add one." (with `show_add: false`: "Ask Assist or the ListApp app to add the first item."; viewers see "Nothing has been added yet.") |
+| `empty` | zero items | check-square tile, "Nothing on this list", "Add the first item above, or ask Assist to add one." (with `show_add: false`: "Ask Assist or the Listapp app to add the first item."; viewers see "Nothing has been added yet.") |
 | `all_done` | items but no active | accent circle with a check, "All done", "Every item on this list is checked off." or "N completed items are hidden." when `show_completed: false` |
 | `list` | otherwise | Active and Completed sections |
 
