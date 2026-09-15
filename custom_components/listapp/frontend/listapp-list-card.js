@@ -45,7 +45,7 @@ var Le=Object.defineProperty;var Ne=Object.getOwnPropertyDescriptor;var v=(s,e,t
           </select>
         </label>
       </div>
-    `}_emit(t){let i=yi(t,this._config.type);this.dispatchEvent(new CustomEvent("config-changed",{detail:{config:i},bubbles:!0,composed:!0}))}static{this.styles=W`
+    `}_emit(t){let i=yi(t,this._config.type);this._config=i,this.dispatchEvent(new CustomEvent("config-changed",{detail:{config:i},bubbles:!0,composed:!0}))}static{this.styles=W`
     :host {
       display: block;
     }

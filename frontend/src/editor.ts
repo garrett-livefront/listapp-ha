@@ -215,6 +215,7 @@ export class ListAppListCardEditor extends LitElement {
 
   private _emit(data: FormData): void {
     const config = fromFormData(data, this._config!.type);
+    this._config = config;
     this.dispatchEvent(new CustomEvent("config-changed", { detail: { config }, bubbles: true, composed: true }));
   }
 

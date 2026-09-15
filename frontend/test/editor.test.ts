@@ -103,6 +103,24 @@ describe("ListAppListCardEditor", () => {
     expect(events[0]!.config).toMatchObject({ entity: "todo.groceries", title: "Custom title" });
   });
 
+  it("carries an earlier native edit forward into the next one", async () => {
+    const editor = await mount();
+    const events: Array<{ config: Record<string, unknown> }> = [];
+    editor.addEventListener("config-changed", (ev) => events.push((ev as CustomEvent).detail));
+
+    const inputs = editor.shadowRoot!.querySelectorAll("input");
+    const titleInput = inputs[0] as HTMLInputElement;
+    titleInput.value = "Custom title";
+    titleInput.dispatchEvent(new Event("input"));
+
+    const showTitleCheckbox = inputs[2] as HTMLInputElement;
+    showTitleCheckbox.checked = false;
+    showTitleCheckbox.dispatchEvent(new Event("change"));
+
+    expect(events).toHaveLength(2);
+    expect(events[1]!.config).toMatchObject({ title: "Custom title", show_title: false });
+  });
+
   it("shows the viewer hint only for a view-only list", async () => {
     const viewerHass = {
       states: {
