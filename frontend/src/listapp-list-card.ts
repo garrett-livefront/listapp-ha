@@ -121,7 +121,9 @@ export class ListAppListCard extends LitElement {
   }
 
   getGridOptions() {
-    return { columns: 12, min_columns: 6, rows: "auto" };
+    // `rows` is a numeric cell count in HA's sections-grid API; omitting it lets the card size
+    // to content, which "auto" (not a valid value) doesn't actually do — see docs/card.md.
+    return { columns: 12, min_columns: 6 };
   }
 
   override connectedCallback(): void {
@@ -173,10 +175,20 @@ export class ListAppListCard extends LitElement {
     if (changed.has("hass") || changed.has("_config")) {
       this._trackAvailability();
     }
-    if (this._reordering) {
+    if (this._reordering || this._dialog || this._menu) {
       const view = this._view();
-      if (view.active.length === 0 || !view.canMove) {
+      if (this._reordering && (view.active.length === 0 || !view.canMove)) {
         this._reordering = false;
+      }
+      // A dialog/menu opened while writable can outlive that permission — e.g. the entity goes
+      // unavailable or the list is demoted to viewer — and its Save/Delete/Clear handlers would
+      // otherwise still fire against a now-unwritable list (Copilot review comment on PR #14).
+      const unavailable = view.state === "unavailable_auth" || view.state === "unavailable_transient";
+      if (unavailable || !view.canUpdate) {
+        if (this._dialog) {
+          this._closeDialog();
+        }
+        this._menu = null;
       }
     }
   }
@@ -755,7 +767,16 @@ export class ListAppListCard extends LitElement {
     ev.preventDefault();
     const dialog = this._dialog;
     const form = ev.currentTarget as HTMLFormElement;
-    const summary = (form.elements.namedItem("summary") as HTMLInputElement).value.trim();
+    const input = form.elements.namedItem("summary") as HTMLInputElement;
+    const summary = input.value.trim();
+    if (dialog?.kind === "edit" && !summary) {
+      // `required` only rejects an empty value, not a whitespace-only one — keep the dialog
+      // open instead of silently discarding the edit.
+      input.setCustomValidity(S.editRequired);
+      input.reportValidity();
+      return;
+    }
+    input.setCustomValidity("");
     if (dialog?.kind === "edit" && summary && summary !== dialog.item.summary && this.hass && this._config) {
       const { hass, _config: config } = this;
       // Resolve the current item by uid — a concurrent update (e.g. someone else checking it

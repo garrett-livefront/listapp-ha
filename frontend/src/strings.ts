@@ -14,6 +14,7 @@ export const STRINGS = {
   save: "Save",
   editTitle: "Edit item",
   editLabel: "Item",
+  editRequired: "Enter an item name.",
   emptyTitle: "Nothing on this list",
   emptyBody: "Add the first item above, or ask Assist to add one.",
   emptyBodyNoAdd: "Ask Assist or the Listapp app to add the first item.",

@@ -120,10 +120,13 @@ stock card (due dates, descriptions and the stock card's display-order option ar
 - Menus are exactly the stock card's: the Active section's ⋯ offers "Reorder items" / "Done
   reordering" only when the entity supports `MOVE_TODO_ITEM`; the Completed section's ⋯ offers
   "Clear completed" (with a confirmation) only when it supports `DELETE_TODO_ITEM`. There is no
-  header menu and no footer. Reorder mode also ends if the entity loses `MOVE_TODO_ITEM` mid-session
-  (a role demotion), not just when the active list empties (Copilot review comment on PR #14).
-- `getCardSize` grows with the visible rows; `getGridOptions` reports 12 columns (min 6) and
-  `rows: "auto"` so the sections view sizes it to content.
+  footer. Reorder mode also ends if the entity loses `MOVE_TODO_ITEM` mid-session (a role
+  demotion), not just when the active list empties (Copilot review comment on PR #14). The one
+  header exception: with `show_completed: false`, the Clear-completed menu moves to the header so
+  it's reachable even with the Completed section hidden (Copilot review comment on PR #14).
+- `getCardSize` grows with the visible rows; `getGridOptions` reports 12 columns (min 6) and omits
+  `rows` so the sections view sizes to content — HA's grid API takes a numeric row count, not
+  `"auto"` (Copilot review comment on PR #14).
 
 ### Why no `ha-*` elements
 
@@ -267,7 +270,8 @@ subline, 5 px progress bar, the add field as a filled block with a 2 px accent u
 on the right, 12 px/800 section labels at 1.2 px tracking, 22 px checkboxes with a 7 px radius,
 15.5 px item text (600 active, 500 struck-through completed), 13.5 px/700 "Show N more". Deliberate
 departures from the mock, all decided before the build: HA theme variables and font instead of the
-fixed greys and Manrope; no header ⋯ and no "shared by" footer; a dark glyph on low-contrast accents;
+fixed greys and Manrope; no "shared by" footer, and no header ⋯ except the Clear-completed
+exception above; a dark glyph on low-contrast accents;
 native controls; the transient-unavailable and viewer-empty wording. The card's outer radius, border
 and shadow are left to `ha-card` so it matches the neighbouring cards in any theme, rather than
 forcing the mock's 16 px. The ⋯ is drawn as three 3.5 px dots in CSS, not a lucide glyph, to match
@@ -289,6 +293,12 @@ item text is a `<button>` when tapping does something. Grip handles are buttons 
 label and ArrowUp/ArrowDown reorder, and focus stays on the moved item's handle. Menus use
 `aria-haspopup`/`aria-expanded` and `role="menu"`; the progress bar is `role="progressbar"`.
 Every focusable control has a visible focus ring in the accent ink.
+
+**Known gaps, not fixed here:** the missing-entity notice and the "Delete" confirm-dialog button
+both use a theme colour (`--warning-color`, `--error-color`) directly as text-on-fill, which on the
+default fallback values falls short of 4.5:1 for 14 px text — the same category of tradeoff as the
+`.primary` button glyph above, and equally a per-theme value the card can't fully control without a
+runtime contrast fixup (Copilot review comments on PR #14, flagged to Garrett).
 
 ## Build
 
