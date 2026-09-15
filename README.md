@@ -13,8 +13,8 @@ A Home Assistant custom integration that links a ListApp account and exposes its
 
 ## Requirements
 
-- Home Assistant 2026.9.2 or newer (the integration is tested against this version; see
-  `hacs.json`).
+- Home Assistant 2026.3.0 or newer (see `hacs.json`; CI also tests against this minimum, see
+  `docs/testing.md`).
 - [my.home-assistant.io](https://my.home-assistant.io/) configured with your Home Assistant URL,
   so Google/Apple sign-in can redirect back to your instance.
 
