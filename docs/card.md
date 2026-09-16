@@ -641,9 +641,8 @@ stock's −0.012em letter-spacing — matching `ha-card`'s own `<h1 class="card-
 was matched against HA's stock card header rather than Garrett's own "Recent Automation Activity"
 card, whose source wasn't available to check directly. The subline kept its colour
 (`--la-muted`) but moved from the mock's fixed 12.5 px/600 to match the item text's typography,
-`--ha-font-size-m`/`--ha-font-weight-normal` (14 px/400). The add field moved from the mock's
-filled block with 13 px/14 px padding, 10 px/500 text, and a fully-rounded 10 px radius to stock's
-size and shape: `hui-todo-list-card`'s add row is an `ha-input` whose default (material) appearance
+`--ha-font-size-m`/`--ha-font-weight-normal` (14 px/400). The add field moved from its previous filled block with 13 px/14 px padding, 15.5 px/500 text, and
+a 10 px radius on the top corners only to stock's size and shape: `hui-todo-list-card`'s add row is an `ha-input` whose default (material) appearance
 is 56 px tall with `0 var(--ha-space-4)` (16 px) padding and 14 px/400 text
 (`--ha-font-size-m`/`--ha-font-weight-normal`, same as item text), and its filled part is rounded
 `var(--ha-border-radius-sm)` (4 px) on the **top corners only**, square on the bottom — the same
