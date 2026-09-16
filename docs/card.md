@@ -84,14 +84,18 @@ One accepted limitation: HA only sets a domain's component up when it has at lea
 zero entries doesn't register the card. There's nothing to show at that point, and adding the first
 entry sets the component up, `async_setup` first.
 
-- `custom_components/listapp/frontend/listapp-list-card.js` is served at
-  `/listapp_frontend/listapp-list-card.js` via `hass.http.async_register_static_paths`
-  (`StaticPathConfig`), the same mechanism popular custom card integrations (and HA core) use to
-  serve a bundled file without a separate static file server.
+- The whole `custom_components/listapp/frontend/` directory is served under `/listapp_frontend/` via
+  `hass.http.async_register_static_paths` (`StaticPathConfig`), the same mechanism popular custom
+  card integrations (and HA core) use to serve bundled files without a separate static file server.
+  The directory, not the single entry file, is registered because the entry dynamically imports its
+  sibling `listapp-list-card-impl.js`, which has to be reachable at the same base URL — see
+  [Fast registration](#fast-registration).
 - `homeassistant.components.frontend.add_extra_js_url` registers it as a global frontend resource,
   so every dashboard loads it automatically — the user never adds a Lovelace resource by hand.
 - The URL carries `?v=<content hash>` for cache busting, computed once at registration from the
-  bundle file's own bytes (`hashlib.sha256(...).hexdigest()[:12]`), not the integration version.
+  bytes of **every** `*.js` in the frontend directory (`hashlib.sha256(...).hexdigest()[:12]`), not
+  the integration version — so a change confined to the implementation chunk still busts the entry's
+  cached URL. See [Cache busting across two files](#cache-busting).
   `manifest.json` doesn't move on every slice that touches the card, but a version-keyed URL only
   invalidates the browser cache when it does — an installation that cached an earlier bundle at
   `?v=0.1.0` would keep serving it across an upgrade that changes the JS without a version bump.
@@ -110,16 +114,100 @@ HACS installs, or a manual step, to get the card. Bundling in the integration an
 gets both from one install — same reasoning as HA's own "local brand images" approach for the
 `brand/` directory.
 
+## <a id="fast-registration"></a>Fast registration and the 2 s deadline
+
+Fix for the intermittent "Configuration error after restart" Garrett and a second user hit on
+2026-09-15 — the residue left after [integration-level registration](#integration-level) (PR #22)
+closed the 404 window.
+
+HA's `src/panels/lovelace/create-element/create-element-base.ts` decides whether a card is broken on
+a **timer**. In `_customCreate()`, when `customElements.get(tag)` is undefined it builds an error
+card, hides it with `display:none`, starts `setTimeout(..., TIMEOUT)` with `const TIMEOUT = 2000`,
+and calls `customElements.whenDefined(tag).then(...)` which clears that timer and fires
+`ll-rebuild`. So the tag winning the race is invisible to the user; losing it un-hides
+"Configuration error". HA does still rebuild if the element defines later, but the visible damage is
+done — on Garrett's instance the card stayed wrong until a hard refresh.
+
+The old bundle was a single ~74 KB module calling `customElements.define` on its last line, so the
+whole of Lit, the card, the icons and the editor had to be fetched *and evaluated* before the tag
+existed. On a cold, just-restarted instance that regularly exceeded 2 s.
+
+The entry module is now **3.2 KB** and does only what has to happen before the deadline: define
+`listapp-list-card` and `listapp-list-card-editor`, push to `window.customCards`, and carry
+`getStubConfig`/`getConfigElement` plus `resolveConfig` (all of `config.ts`, which is
+dependency-free). The ~73 KB implementation moves to `listapp-list-card-impl.js`, pulled in by a
+dynamic `import()` after the tags are already registered.
+
+### Why not a Lovelace resource
+
+Switching from `add_extra_js_url` to a Lovelace resource does not help: resources aren't awaited
+either. `ha-panel-lovelace.ts` calls `loadLovelaceResources(...)` inside a `.then`, so dashboard
+rendering races resource evaluation exactly as it races ours. The deadline is the problem, not the
+delivery mechanism.
+
+### The wrapper
+
+`src/entry.ts` registers a thin `HTMLElement` that **hosts** the real element as a light-DOM child
+once the chunk arrives, rather than upgrading in place. Hosting was chosen because the alternative —
+defining the tag as a stub and later swapping its prototype — isn't something custom elements
+support: a tag's class is fixed at `define` time, so an upgrade-in-place would mean re-defining a
+registered tag, which throws. Light DOM (not a shadow root) keeps theme custom properties
+inheriting as before and lets the editor's `config-changed` events bubble to HA untouched.
+
+The wrapper has to behave correctly in the window before the implementation exists:
+
+- `setConfig` runs `resolveConfig` **synchronously**, so a genuinely bad config still throws from
+  `setConfig` the way HA expects, then stores the raw config for the implementation.
+- The `hass` setter stores the latest value and replays it onto the implementation at mount, so a
+  `hass` set during the gap isn't lost.
+- `getCardSize()` mirrors the size the implementation reports **while items are loading**, which is
+  the state the chunk actually mounts into: `1 + (show_header ? 1 : 0)`, because the progress bar
+  and the add form are both suppressed during loading and there are no item rows yet. It falls back
+  to the implementation's no-config answer of 3 when there is no config, or when the entity isn't in
+  `hass.states` (the implementation's `missing` state, also 3). An earlier revision returned a flat
+  3, which silently collapsed to 2 the instant the chunk mounted — the exact layout shift this
+  wrapper exists to avoid (Copilot review comment on PR #24). The one case still not mirrored is
+  `unavailable_auth` / `unavailable_transient`, where the implementation returns 3 and the wrapper
+  says 2: those are derived from an availability probe the entry can't run without pulling the API
+  client into the size-budgeted bundle, and they cost one row in an error state rather than on every
+  normal load. `getGridOptions()` returns the exact `{ columns: 12, min_columns: 6 }` the
+  implementation returns. Both delegate once the chunk has landed.
+- Nothing is rendered during the gap. An empty card for a few hundred milliseconds beats a spinner
+  or a placeholder that resizes.
+- A rejected import (offline, or the chunk 404ing) is caught and replaced with a readable notice
+  rather than an element that never paints.
+
+One `import()` is shared by every card on the dashboard and by the editor — the module-level promise
+is memoised, so ten Listapp cards fetch the chunk once.
+
+`npm run build` enforces the win rather than trusting it: the build fails if the entry ever gains a
+*static* import of the implementation, loses its dynamic one, or grows past an 8 KB budget.
+
+### <a id="cache-busting"></a>Cache busting across two files
+
+The implementation is built first; its content hash is baked into the entry as
+`./listapp-list-card-impl.js?v=<hash>`, so the chunk gets its own cache-busting query and the entry's
+bytes change whenever the chunk does. `frontend.py` then hashes **every** `*.js` in the directory for
+the entry's own `?v=`, which makes a chunk-only change bust the entry too. `StaticPathConfig` now
+registers the whole `frontend/` directory rather than the single file, since the entry's sibling
+chunk has to be reachable at the same base URL.
+
 ## Architecture
 
 Source lives in `frontend/` at the repo root (Lit 3 + TypeScript, bundled by esbuild). The build
-output is **committed** at `custom_components/listapp/frontend/listapp-list-card.js` because HACS
-installs straight from the git repository — there is nowhere for a bundler to run on the user's
-instance. The bundle is a single dependency-free ES module (~58 KB minified, ~20 KB gzipped, of
-which Lit is roughly two thirds).
+output is **committed** because HACS installs straight from the git repository — there is nowhere
+for a bundler to run on the user's instance. It builds to two dependency-free ES modules, and
+**both** are committed and shipped:
+`custom_components/listapp/frontend/listapp-list-card.js` (a ~3.3 KB entry that registers the tags)
+and `custom_components/listapp/frontend/listapp-list-card-impl.js` (a ~73 KB, ~20 KB gzipped — of
+which Lit is roughly two thirds — implementation chunk the entry imports dynamically). Shipping the
+entry without its sibling would leave the lazy import 404ing at runtime, so `check:fresh` guards
+both files; see [Fast registration](#fast-registration) for why the split exists.
 
 | Module | Role |
 | --- | --- |
+| `src/entry.ts` | the built entry: registers the tags, lazy-loads and delegates to the implementation |
+| `src/tags.ts` | the tag names, so `entry.ts` can reference them without importing Lit |
 | `src/listapp-list-card.ts` | the `LitElement`; rendering, subscriptions, event handlers, styles |
 | `src/model.ts` | pure state derivation: split/collapse items, viewer gating, card state, availability classification, move → `previous_uid` |
 | `src/config.ts` | option defaults and validation, `getStubConfig` |
@@ -494,8 +582,19 @@ npm ci
 npm run build        # gen icons are separate: npm run gen:icons
 npm run dev          # esbuild serve + watch → http://127.0.0.1:8000/ (the harness)
 npm run lint && npm run typecheck && npm test
-npm run check:fresh  # rebuilds and fails if the committed bundle/icons differ
+npm run check:fresh  # rebuilds and fails if any committed bundle file or the icons differ
 ```
+
+`npm run build` emits **both** `listapp-list-card.js` and `listapp-list-card-impl.js`; both are
+committed, and `check:fresh` compares every file in the output directory (flagging a file that is
+emitted but uncommitted, or committed but no longer emitted) rather than just the entry.
+
+`check:fresh` builds into a scratch directory and compares, rather than rebuilding over the
+committed output. Rebuilding in place can't detect a file that is committed but no longer emitted:
+nothing deletes it, so it appears unchanged in both the before and after snapshots and the stale
+branch never fires. That matters more after the split, because `frontend.py` serves the whole
+directory and folds every `*.js` into the entry's `?v=` — an orphaned chunk would be served
+indefinitely and would skew the cache-busting hash (Copilot review comment on PR #24).
 
 `.github/workflows/card.yml` runs lint, typecheck, tests and `check:fresh` on every PR. The
 freshness check is what keeps the committed bundle honest: esbuild's output is deterministic for

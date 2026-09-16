@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import "../src/editor.js";
 import type { ListAppListCardEditor } from "../src/editor.js";
 import type { HomeAssistant } from "../src/ha.js";
+import { EDITOR_IMPL_TAG } from "../src/tags.js";
 
 class FakeHaForm extends HTMLElement {
   schema: Array<{ name: string; disabled?: boolean }> = [];
@@ -19,7 +20,7 @@ function hass(): HomeAssistant {
 }
 
 async function mount(config: Record<string, unknown>): Promise<ListAppListCardEditor> {
-  const editor = document.createElement("listapp-list-card-editor") as ListAppListCardEditor;
+  const editor = document.createElement(EDITOR_IMPL_TAG) as ListAppListCardEditor;
   editor.setConfig({ type: "custom:listapp-list-card", entity: "todo.groceries", ...config });
   editor.hass = hass();
   document.body.append(editor);

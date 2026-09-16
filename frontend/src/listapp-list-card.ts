@@ -5,8 +5,9 @@ import { classMap } from "lit/directives/class-map.js";
 import { repeat } from "lit/directives/repeat.js";
 import { styleMap } from "lit/directives/style-map.js";
 import { buildPalette, HA_PRIMARY_FALLBACK, resolveListColor, type Palette } from "./color.js";
-import { CARD_TYPE, resolveConfig, stubConfig, type ListAppCardConfig, type ResolvedConfig } from "./config.js";
-import { EDITOR_TAG } from "./editor.js";
+import { resolveConfig, stubConfig, type ListAppCardConfig, type ResolvedConfig } from "./config.js";
+import "./editor.js";
+import { CARD_IMPL_TAG, EDITOR_TAG } from "./tags.js";
 import {
   createItem,
   deleteItems,
@@ -1552,22 +1553,6 @@ export class ListAppListCard extends LitElement {
   `;
 }
 
-declare global {
-  interface Window {
-    customCards?: { type: string; name: string; description: string; preview?: boolean }[];
-  }
-}
-
-if (!customElements.get(CARD_TYPE)) {
-  customElements.define(CARD_TYPE, ListAppListCard);
-}
-
-window.customCards = window.customCards ?? [];
-if (!window.customCards.some((card) => card.type === CARD_TYPE)) {
-  window.customCards.push({
-    type: CARD_TYPE,
-    name: "Listapp list",
-    description: "A Listapp list with its colour, icon and progress.",
-    preview: true,
-  });
+if (!customElements.get(CARD_IMPL_TAG)) {
+  customElements.define(CARD_IMPL_TAG, ListAppListCard);
 }

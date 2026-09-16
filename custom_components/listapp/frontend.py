@@ -12,20 +12,28 @@ from .const import DOMAIN
 
 URL_BASE = "/listapp_frontend"
 CARD_FILENAME = "listapp-list-card.js"
+IMPL_FILENAME = "listapp-list-card-impl.js"
 CARD_URL = f"{URL_BASE}/{CARD_FILENAME}"
 
 _REGISTERED = "frontend_registered"
 _REGISTER_LOCK = "frontend_register_lock"
 
 
-def _bundle_hash(path: Path) -> str:
-    """Short content hash for cache-busting — see docs/card.md#cache-busting.
+def _frontend_dir() -> Path:
+    return Path(__file__).parent / "frontend"
 
-    Keyed to the bundle's own bytes rather than the integration version, so a
-    slice that changes the card without bumping `manifest.json` still busts
-    the long-lived cache header instead of serving the previous bundle.
+
+def _bundle_hash(directory: Path) -> str:
+    """Short content hash over every emitted file — see docs/card.md#cache-busting.
+
+    Covers the whole directory, not just the entry, so a change confined to the lazy
+    implementation chunk still moves the entry's `?v=` and busts the long-lived cache header.
     """
-    return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    digest = hashlib.sha256()
+    for path in sorted(directory.glob("*.js")):
+        digest.update(path.name.encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:12]
 
 
 async def async_register_frontend(hass: HomeAssistant) -> None:
@@ -42,9 +50,10 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
         if domain_data.get(_REGISTERED):
             return
 
-        path = Path(__file__).parent / "frontend" / CARD_FILENAME
+        directory = _frontend_dir()
+        # The directory, not the entry alone: the entry lazily imports a sibling chunk.
         await hass.http.async_register_static_paths(
-            [StaticPathConfig(CARD_URL, str(path), cache_headers=True)]
+            [StaticPathConfig(URL_BASE, str(directory), cache_headers=True)]
         )
-        add_extra_js_url(hass, f"{CARD_URL}?v={_bundle_hash(path)}")
+        add_extra_js_url(hass, f"{CARD_URL}?v={_bundle_hash(directory)}")
         domain_data[_REGISTERED] = True

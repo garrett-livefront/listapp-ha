@@ -5,7 +5,9 @@ import type { HomeAssistant } from "./ha.js";
 import { isViewer } from "./model.js";
 import type { ItemTapAction, ListAppCardConfig } from "./config.js";
 
-export const EDITOR_TAG = "listapp-list-card-editor";
+import { EDITOR_IMPL_TAG, EDITOR_TAG } from "./tags.js";
+
+export { EDITOR_TAG };
 
 export const DEFAULTS = {
   use_list_color: true,
@@ -285,6 +287,6 @@ export class ListAppListCardEditor extends LitElement {
   `;
 }
 
-if (typeof customElements !== "undefined" && !customElements.get(EDITOR_TAG)) {
-  customElements.define(EDITOR_TAG, ListAppListCardEditor);
+if (typeof customElements !== "undefined" && !customElements.get(EDITOR_IMPL_TAG)) {
+  customElements.define(EDITOR_IMPL_TAG, ListAppListCardEditor);
 }

@@ -9,7 +9,13 @@ from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.listapp.const import API_BASE_URL, DOMAIN
-from custom_components.listapp.frontend import CARD_FILENAME, CARD_URL, async_register_frontend
+from custom_components.listapp.frontend import (
+    CARD_FILENAME,
+    CARD_URL,
+    IMPL_FILENAME,
+    URL_BASE,
+    async_register_frontend,
+)
 
 from .conftest import register_lists
 from .helpers import ACCOUNT_ID, FULL_SCOPE, OTHER_ACCOUNT_ID, groceries
@@ -72,6 +78,47 @@ async def test_version_query_tracks_bundle_content(hass: HomeAssistant, tmp_path
         bundle.write_bytes(original)
 
 
+async def test_serves_the_whole_bundle_directory(hass: HomeAssistant) -> None:
+    """Code splitting means the entry is not the only file that has to be reachable."""
+    from pathlib import Path
+
+    hass.http = AsyncMock()
+    with patch("custom_components.listapp.frontend.add_extra_js_url"):
+        await async_register_frontend(hass)
+
+    config = hass.http.async_register_static_paths.call_args[0][0][0]
+    assert config.url_path == URL_BASE
+    served = Path(config.path)
+    assert served.is_dir()
+    emitted = {p.name for p in served.glob("*.js")}
+    assert {CARD_FILENAME, IMPL_FILENAME} <= emitted
+    assert config.cache_headers
+
+
+async def test_version_query_tracks_the_lazy_chunk_too(hass: HomeAssistant) -> None:
+    """A change confined to the lazy chunk must still bust the entry's cached URL."""
+    from pathlib import Path
+
+    chunk = Path(__file__).parents[1] / "custom_components" / "listapp" / "frontend" / IMPL_FILENAME
+    original = chunk.read_bytes()
+    try:
+        hass.http = AsyncMock()
+        with patch("custom_components.listapp.frontend.add_extra_js_url") as add_extra_js_url:
+            await async_register_frontend(hass)
+            first_url = add_extra_js_url.call_args[0][1]
+
+        chunk.write_bytes(original + b"\n// touched for test")
+        hass.data[DOMAIN]["frontend_registered"] = False
+        with patch("custom_components.listapp.frontend.add_extra_js_url") as add_extra_js_url:
+            await async_register_frontend(hass)
+            second_url = add_extra_js_url.call_args[0][1]
+
+        assert first_url.startswith(f"{CARD_URL}?v=")
+        assert first_url != second_url
+    finally:
+        chunk.write_bytes(original)
+
+
 async def test_concurrent_calls_register_exactly_once(hass: HomeAssistant) -> None:
     hass.http = AsyncMock()
 
@@ -122,7 +169,7 @@ async def test_registered_by_async_setup_without_any_config_entry(hass: HomeAssi
 
         assert not hass.config_entries.async_entries(DOMAIN)
         assert register_static_paths.call_count == 1
-        assert register_static_paths.call_args[0][0][0].url_path == CARD_URL
+        assert register_static_paths.call_args[0][0][0].url_path == URL_BASE
         assert add_extra_js_url.call_count == 1
 
 
