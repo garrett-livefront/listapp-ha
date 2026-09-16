@@ -738,24 +738,27 @@ mock `hass`. Slice 4 reuses the card side of the harness for README screenshots.
 
 ### README screenshot recipe
 
-Capture at the harness's `width=412` slider value with `deviceScaleFactor=2` — a Playwright
-screenshot of the `listapp-list-card` element's bounding box, clipped to exactly that box. This
-combination happens to land at **824px wide**; 824 is a consequence of `width=412 × 2`, not a
-target to hit by other means. **Never resize, scale, or crop a capture after the fact** — if the
-output width isn't what you expect, change the viewport width or DPR and recapture, don't touch the
-pixels. Playwright is not a repo dependency; it's run ad hoc (`npx playwright install chromium`,
-then a throwaway script), so don't go looking for it in `package.json`.
+Use the tracked script — `cd frontend && npm run dev &` then `node scripts/capture-screenshots.mjs`
+(see [CONTRIBUTING.md](../CONTRIBUTING.md)). It drives the dev harness over CDP at the harness's
+`width=380` slider value, then clips each rendered `.theme` column (card plus its 16px padding) at
+`deviceScaleFactor: 2`. The 824px width in every committed image is a *consequence* of that —
+`main`'s CSS grid gives each theme column exactly its content's minimum width (380 + 16px × 2 =
+412), doubled by the DPR — not a target hit by any other means. **Never resize, scale, or crop a
+capture after the fact.** If a future design change moves the natural width off 824, that's fine;
+report the new width rather than forcing the old one.
 
 Before committing, verify the icon tile — CSS `38×38` — measures exactly `76×76` in the output.
 `card-unavailable-reauth-dark` has no tile (it's the reauth banner state), so that check doesn't
-apply to it. Heights aren't fixed to the old set: they range 662–1022px against the old 704–1012px
-because rows are genuinely taller under #30/#31's typography, and the README embeds at
-`width="380"` with no `height`, so aspect ratio follows the image with no markup change needed.
+apply to it.
 
-This check exists because of a 2026-09-16 defect on #29: images were force-resized to match the old
-824px width, stretching every tile to 122×115. CI was fully green and Copilot reported "wasn't able
-to review any files" — nothing in the pipeline can inspect a PNG's content, so **a human reviewing
-the rendered result is the only check that catches this.**
+This check exists because of a 2026-09-16 defect on #29: an ad hoc Playwright script (not the
+tracked one above) force-resized captures to match the old 824px width, stretching every tile to
+122×115 — and, in a second pass, used a different clip (the card element alone, without the
+column's padding) that landed on the right width by a different, undocumented route while missing
+the tracked script entirely. Both passes went out with CI fully green and Copilot reporting "wasn't
+able to review any files" — nothing in the pipeline can inspect a PNG's content, so **a human
+reviewing the rendered result is the only check that catches either kind of defect.** Use the
+tracked script; don't reinvent the capture.
 
 ## Licences
 
