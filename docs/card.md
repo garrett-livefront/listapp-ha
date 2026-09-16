@@ -19,15 +19,20 @@ Each list's `todo` entity exposes on `extra_state_attributes`:
 | Attribute | Type | Source |
 | --- | --- | --- |
 | `list_id` | `str` | the list's id |
-| `color` | `str \| None` | `ListResponse.color` (a hex string), or `None` |
-| `icon` | `str \| None` | `ListResponse.icon` (an icon key, e.g. `shopping-cart`), or `None` |
+| `list_color` | `str \| None` | `ListResponse.color` (a hex string), or `None` |
+| `list_icon` | `str \| None` | `ListResponse.icon` (an icon key, e.g. `shopping-cart`), or `None` |
 | `role` | `str \| None` | `my_role` lower-cased when it's `OWNER`/`EDITOR`/`VIEWER`, else `None` |
+
+`list_color`/`list_icon` were `color`/`icon` until PR #23 — `icon` collides with HA's reserved
+attribute, which broke the entity icon everywhere but the card; see
+[Roles](architecture.md#roles) for the fallout and the fix. No back-compat alias: old names appear
+nowhere in the final state.
 
 No owner/sharer name is exposed — the card doesn't show "shared by" (Garrett decided this; see the
 plan). Names are snake_case and stable; the card depends on them, so a rename here is a breaking
 change for the card.
 
-`color` and `icon` follow the same path as `title` and `my_role` already do (`api.py`'s
+`list_color` and `list_icon` follow the same path as `title` and `my_role` already do (`api.py`'s
 `_parse_list`, `ListAppCoordinator` polling, and the `list.updated` SSE handler) — see
 [Roles](architecture.md#roles) for the precedent this follows, including why `list.updated`'s
 `myRole` is ignored but its `color`/`icon` are applied directly (unlike role, they aren't
@@ -401,7 +406,7 @@ progress, add field and section labels stay full width. There is no inner scroll
 
 ## Colour
 
-Accent = the entity's `color` attribute when it parses as hex; otherwise `avatarColor(list_id)`,
+Accent = the entity's `list_color` attribute when it parses as hex; otherwise `avatarColor(list_id)`,
 ported **verbatim** from listapp-mobile `lib/avatar.ts` so a list with no saved colour looks the
 same in HA as in the app. `frontend/test/color.test.ts` pins eleven seed → colour vectors computed
 by running the mobile function under node, including one long enough to overflow int32 (the `| 0`
@@ -434,7 +439,7 @@ computed `--primary-color` (fallback `#03a9f4`).
 
 ## Icons
 
-The `icon` attribute holds one of the 26 lucide keys the mobile app allows
+The `list_icon` attribute holds one of the 26 lucide keys the mobile app allows
 (`lib/list-appearance.ts`). `frontend/scripts/gen-icons.mjs` reads those icons' node data from the
 pinned `lucide` npm package and writes `src/icons.generated.ts` (also the 14 UI glyphs the card
 uses), so the SVG paths are bundled and nothing is fetched at runtime. Two keys differ from lucide's
@@ -528,7 +533,7 @@ static-path registration via `HomeAssistantHTTP.async_register_static_paths`, pa
 the real `http`/`frontend` components have done their own (unrelated) static-path registrations, so
 the count reflects only this integration's call.
 
-`tests/test_coordinator.py` and `tests/test_todo.py` cover `color`/`icon` through a poll, a
+`tests/test_coordinator.py` and `tests/test_todo.py` cover `list_color`/`list_icon` through a poll, a
 coordinator refresh, and a `list.updated` SSE event, for owner/editor/viewer lists with and without
 color/icon set.
 

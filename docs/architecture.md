@@ -72,6 +72,12 @@ override both, and they're read when the integration module is imported. See
 - **Writes:** create (appended at `max(position) + 1`), update (rename, check, uncheck), delete,
   and move (sends the full order to `PUT /items/reorder`). Each write asks the coordinator for a
   debounced refresh.
+- **The entity's HA `icon` shows the caller's role**, not the list's own icon — the list name
+  already conveys identity, and `icon` is a reserved HA attribute the list icon was wrongly
+  published under until PR #23 (see [Lovelace card](card.md#attribute-contract)). `owner` →
+  `mdi:crown-outline`, `editor` → `mdi:pencil-outline`, `viewer` → `mdi:eye-outline`, unknown/`None`
+  → `mdi:format-list-checks`; it's a property (not `_attr_icon`) so it re-reads `my_role` on every
+  coordinator update, same as [role-driven `supported_features`](#roles) below.
 
 ### <a id="roles"></a>Viewer lists are read-only up front
 
@@ -250,9 +256,9 @@ server route: newly-shared lists are deliberately not added mid-stream either).
 
 ## Lovelace card
 
-The bundled "ListApp list" card — the `color`/`icon`/`role`/`list_id` attribute contract, how the
-card JS is served and registered once per instance (from the domain's `async_setup`, not per config
-entry — [why](card.md#integration-level)), and cache busting: see [`docs/card.md`](card.md).
+The bundled "ListApp list" card — the `list_color`/`list_icon`/`role`/`list_id` attribute contract,
+how the card JS is served and registered once per instance (from the domain's `async_setup`, not per
+config entry — [why](card.md#integration-level)), and cache busting: see [`docs/card.md`](card.md).
 
 ## Brand icon
 
