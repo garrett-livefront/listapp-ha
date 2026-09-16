@@ -502,14 +502,15 @@ matters). If the mobile palette or hash changes, those vectors fail here.
 
 From the accent, `color.ts#buildPalette` derives:
 
-- **glyph** — the colour of white-on-accent content (tile icon, checked tick, the Sign in and Save
-  button labels). White is used when it reaches WCAG 3:1 against the accent, else a near-black
-  `#1c1917`. 3:1 is the graphics threshold; the 14 px/700 button labels on mid-tone accents such as
-  `#3b82f6` (white at ~3.7:1) sit below the 4.5:1 text threshold. Kept deliberately so the buttons
-  match the design's accent-filled look (Copilot review comment on PR #14, flagged to Garrett). Of the
-  app's 14 colours, white fails on lime `#84cc16`, yellow `#eab308`, amber `#f59e0b`, green
-  `#22c55e`, teal `#14b8a6`, cyan `#06b6d4`, sky `#0ea5e9` and orange `#f97316` — so those eight
-  get a dark glyph. This is a deliberate departure from the design's "white glyph" and is tested.
+- **glyph** — the colour of white-on-accent content (tile icon, checked tick, accent-filled button
+  labels). Always white, matching HA's stock to-do card and the design's top tile. Garrett decided
+  (2026-09-15) to accept the contrast this costs rather than run a dark-glyph fallback: white falls
+  below the WCAG 3:1 graphics threshold on 8 of the app's 14 list colours (worst cases lime
+  `#84cc16` at 1.98:1 and yellow `#eab308` at 1.92:1; his own teal `#14b8a6` sits at 2.49:1). He has
+  already accepted the same trade in the mobile app, and plans a separate accent colour in the
+  palette later so brand colour and contrast can both be met. This does **not** pass 3:1 on those
+  eight colours; `frontend/test/color.test.ts` pins the always-white behaviour rather than a
+  contrast floor.
 - **ink** — accent-coloured text and icons on the card background ("Show N more", the +, links).
   Dark themes lighten the accent by 38 % as the design does. Light themes darken any accent that
   doesn't already reach 4.5:1 against `--card-background-color`, in 12 % steps until it does (or
@@ -541,15 +542,18 @@ Sizes, weights, letter-spacing, radii, padding and gaps in `listapp-list-card.ts
 design's values verbatim (variant 1b "quiet rail", `HA Todo Card.dc.html` in the Claude Design
 project): 38 px tile with an 11 px radius, 17.5 px/800 title at −0.2 px tracking, 12.5 px/600
 subline, 5 px progress bar, the add field as a filled block with a 2 px accent underline and the +
-on the right, 12 px/800 section labels at 1.2 px tracking, 22 px checkboxes with a 7 px radius,
-15.5 px item text (600 active, 500 struck-through completed), 13.5 px/700 "Show N more". Deliberate
-departures from the mock, all decided before the build: HA theme variables and font instead of the
-fixed greys and Manrope; no "shared by" footer, and no header ⋯ menu at all; a dark glyph on
-low-contrast accents;
-native controls; the transient-unavailable and viewer-empty wording. The card's outer radius, border
-and shadow are left to `ha-card` so it matches the neighbouring cards in any theme, rather than
-forcing the mock's 16 px. The ⋯ is drawn as three 3.5 px dots in CSS, not a lucide glyph, to match
-the mock's horizontal ellipsis.
+on the right, 12 px/800 section labels at 1.2 px tracking, 13.5 px/700 "Show N more". Item text,
+the checkbox and the glyph deliberately match HA's stock to-do card instead of the mock (Garrett
+compared the two side by side, 2026-09-15): item text is `--ha-font-size-m`/`--ha-font-weight-normal`
+(14 px/400, active and completed alike, not the mock's 15.5 px/600–500), the checkbox is 20 px with
+`--ha-border-radius-sm` (4 px, not the mock's 22 px/7 px), and the glyph is always white (see
+[Colour](#colour)). Other deliberate departures from the mock, all decided before the build: HA
+theme variables and font instead of the fixed greys and Manrope; no "shared by" footer, and no
+header ⋯ menu at all; native controls; the transient-unavailable and viewer-empty wording. The
+card's outer radius, border and shadow are left to `ha-card` so it matches the neighbouring cards in
+any theme, rather than forcing the mock's 16 px. The ⋯ is drawn as three 3.5 px dots stacked
+vertically in CSS, not a lucide glyph, matching the stock card's vertical kebab rather than the
+mock's horizontal ellipsis.
 
 ## Theming
 

@@ -1227,6 +1227,7 @@ export class ListAppListCard extends LitElement {
     }
     .dots {
       display: flex;
+      flex-direction: column;
       gap: 3px;
     }
     .dots i {
@@ -1269,13 +1270,13 @@ export class ListAppListCard extends LitElement {
     .check {
       flex: none;
       position: relative;
-      width: 22px;
-      height: 22px;
+      width: 20px;
+      height: 20px;
       cursor: pointer;
     }
     .check input {
       position: absolute;
-      inset: -11px;
+      inset: -12px;
       width: var(--la-target);
       height: var(--la-target);
       margin: 0;
@@ -1286,10 +1287,10 @@ export class ListAppListCard extends LitElement {
       cursor: default;
     }
     .box {
-      width: 22px;
-      height: 22px;
+      width: 20px;
+      height: 20px;
       box-sizing: border-box;
-      border-radius: 7px;
+      border-radius: var(--ha-border-radius-sm, 4px);
       border: 2px solid var(--la-muted);
       display: grid;
       place-items: center;
@@ -1317,13 +1318,12 @@ export class ListAppListCard extends LitElement {
       align-items: center;
       padding: 0;
       text-align: left;
-      font-size: 15.5px;
-      font-weight: 600;
+      font-size: var(--ha-font-size-m, 14px);
+      font-weight: var(--ha-font-weight-normal, 400);
       line-height: 1.35;
       overflow-wrap: anywhere;
     }
     .done .summary {
-      font-weight: 500;
       color: var(--la-muted);
       text-decoration: line-through;
     }

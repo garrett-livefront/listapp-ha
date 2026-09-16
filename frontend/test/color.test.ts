@@ -4,8 +4,6 @@ import {
   avatarColor,
   buildPalette,
   contrast,
-  DARK_GLYPH,
-  glyphOn,
   LIST_COLORS,
   parseCssColor,
   parseHex,
@@ -56,20 +54,9 @@ describe("parsing", () => {
   });
 });
 
-describe("glyph contrast over the 14 app colours", () => {
-  const risky = ["#84cc16", "#eab308", "#f59e0b", "#22c55e", "#14b8a6", "#06b6d4", "#0ea5e9", "#f97316"];
-  it.each(LIST_COLORS)("%s gets a glyph with at least 3:1 contrast", (hex) => {
-    const rgb = parseHex(hex)!;
-    const glyph = glyphOn(rgb);
-    expect(contrast(parseHex(glyph)!, rgb)).toBeGreaterThanOrEqual(3);
-  });
-  it("uses a dark glyph where white fails 3:1", () => {
-    for (const hex of risky) {
-      expect(glyphOn(parseHex(hex)!)).toBe(DARK_GLYPH);
-    }
-    for (const hex of ["#9810fa", "#6366f1", "#ef4444", "#ec4899"]) {
-      expect(glyphOn(parseHex(hex)!)).toBe(WHITE);
-    }
+describe("glyph", () => {
+  it.each(LIST_COLORS)("%s always gets a white glyph (Garrett's decision, 2026-09-15)", (hex) => {
+    expect(buildPalette(hex, "#ffffff", false).glyph).toBe(WHITE);
   });
 });
 
