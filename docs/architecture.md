@@ -62,7 +62,7 @@ override both, and they're read when the integration module is imported. See
   sync on every coordinator update — HA doesn't re-push `device_info` on a rename, only at entity
   creation — and removes a list's device alongside its entity-registry entry when the list
   disappears. **Upgrade impact:** unique_ids are unchanged, so existing entity_ids and dashboards
-  keep working; only the displayed name changes, and the old single "Listapp" account-level device
+  keep working; only the displayed name changes, and the old single "ListApp" account-level device
   (identifier `<account id>`) is removed on the next setup as an orphan.
 - **Lists disappear, but never appear, on their own.** A selected list that is deleted or whose
   access is revoked (a 404 on poll, or `list.deleted`/`member.deleted` on the stream) is dropped
