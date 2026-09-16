@@ -73,3 +73,15 @@ ha-card {
   border: 1px solid var(--divider-color);
   color: var(--primary-text-color);
 }
+#editorRoot {
+  max-width: 480px;
+  margin: 16px;
+  padding: 16px;
+  border: 1px solid var(--divider-color);
+  border-radius: 8px;
+}
+#editorRoot pre {
+  font: 11px/1.4 monospace;
+  color: var(--secondary-text-color);
+  white-space: pre-wrap;
+}

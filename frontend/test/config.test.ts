@@ -62,11 +62,28 @@ describe("resolveConfig", () => {
 });
 
 describe("stubConfig", () => {
-  it("prefers a ListApp todo entity, then any todo entity", () => {
-    expect(stubConfig(["light.a", "todo.other", "todo.listapp_groceries"]).entity).toBe(
-      "todo.listapp_groceries",
+  it("prefers an entity carrying list_id, then any todo entity", () => {
+    const states = {
+      "todo.renamed_list": { attributes: { list_id: "abc" } },
+      "todo.other": { attributes: {} },
+    };
+    expect(stubConfig(["light.a", "todo.other", "todo.renamed_list"], states).entity).toBe(
+      "todo.renamed_list",
     );
-    expect(stubConfig(["light.a", "todo.other"]).entity).toBe("todo.other");
-    expect(stubConfig(["light.a"])).toEqual({ type: "custom:listapp-list-card", entity: "" });
+    expect(stubConfig(["light.a", "todo.other"], states).entity).toBe("todo.other");
+    expect(stubConfig(["light.a"], states)).toEqual({ type: "custom:listapp-list-card", entity: "" });
+  });
+
+  it("does not match by a todo.listapp_* name when list_id is absent", () => {
+    const states = { "todo.listapp_groceries": { attributes: {} }, "todo.other": { attributes: {} } };
+    expect(stubConfig(["todo.other", "todo.listapp_groceries"], states).entity).toBe("todo.other");
+  });
+
+  it("ignores a non-todo entity carrying list_id", () => {
+    const states = {
+      "light.list_id_lookalike": { attributes: { list_id: "abc" } },
+      "todo.other": { attributes: {} },
+    };
+    expect(stubConfig(["light.list_id_lookalike", "todo.other"], states).entity).toBe("todo.other");
   });
 });

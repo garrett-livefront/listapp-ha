@@ -216,6 +216,8 @@ const only = document.getElementById("only");
 const width = document.getElementById("width");
 const widthValue = document.getElementById("widthValue");
 const wide = document.getElementById("wide");
+const editorToggle = document.getElementById("editor");
+const editorRoot = document.getElementById("editorRoot");
 
 SCENARIOS.forEach((s, i) => {
   const opt = document.createElement("option");
@@ -223,6 +225,21 @@ SCENARIOS.forEach((s, i) => {
   opt.textContent = s.name;
   select.appendChild(opt);
 });
+
+function mountEditor(scenario) {
+  editorRoot.innerHTML = "";
+  const config = { type: "custom:listapp-list-card", entity: scenario.entity?.entity_id, ...scenario.config };
+  const pre = document.createElement("pre");
+  pre.textContent = JSON.stringify(config);
+  const editor = document.createElement("listapp-list-card-editor");
+  editor.hass = makeHass(scenario, false);
+  editor.setConfig(config);
+  editor.addEventListener("config-changed", (ev) => {
+    pre.textContent = JSON.stringify(ev.detail.config);
+    editor.setConfig(ev.detail.config);
+  });
+  editorRoot.append(pre, editor);
+}
 
 function render() {
   root.innerHTML = "";
@@ -234,6 +251,10 @@ function render() {
     root.appendChild(col);
   }
   applyWidth();
+  editorRoot.hidden = !editorToggle.checked;
+  if (editorToggle.checked) {
+    mountEditor(chosen[0]);
+  }
 }
 
 function applyWidth() {
@@ -258,4 +279,5 @@ only.addEventListener("change", render);
 select.addEventListener("change", render);
 width.addEventListener("input", applyWidth);
 wide.addEventListener("change", applyWidth);
+editorToggle.addEventListener("change", render);
 render();

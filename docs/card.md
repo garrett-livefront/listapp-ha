@@ -219,10 +219,11 @@ If HA later exposes a stable public element set for custom cards, swapping these
 
 ## Options
 
-YAML only in this slice; the visual editor is slice 3. `getStubConfig` picks the first
-`todo.listapp_*` entity so the card picker preview works. The picker calls it with only `hass`
-(no `entities`/`fallback` arguments), so it falls back to `hass.states` rather than requiring
-them (Copilot review comment on PR #14).
+Configurable via YAML or the visual editor (below). `getStubConfig` picks the first `todo.` entity
+carrying a `list_id` attribute (not a `todo.listapp_*` name match — users can rename entity ids) so
+the card picker preview works. The picker calls it with only `hass` (no `entities`/`fallback`
+arguments), so it falls back to `hass.states` rather than requiring them (Copilot review comment on
+PR #14).
 
 | Option | Default | Notes |
 | --- | --- | --- |
@@ -235,6 +236,21 @@ them (Copilot review comment on PR #14).
 | `show_progress` | `true` | the progress bar under the header |
 | `collapse_to` | `0` (off) | show N active items and a "Show N more" disclosure; must be a non-negative integer |
 | `item_tap_action` | `toggle` | `toggle` checks/unchecks on tap; `edit` opens the rename/delete dialog. The checkbox itself always toggles |
+
+## Editor
+
+`getConfigElement` returns `listapp-list-card-editor` (`src/editor.ts`), mirroring HA's stock
+`hui-todo-list-card-editor.ts` (Apache-2.0; see `NOTICE`). It renders an `ha-form` when that element
+is defined — true inside the card-editor dialog, though not guaranteed on a bare dashboard — and
+falls back to native theme-styled controls otherwise, waiting on `customElements.whenDefined` in
+case `ha-form` hasn't loaded yet. Fields: entity (restricted to `todo.` entities carrying `list_id`,
+falling back to every `todo.` entity), title override, the five booleans, `collapse_to`, and
+`item_tap_action`. A hint under the entity picker notes the add field is always hidden for
+view-only lists regardless of `show_add`, once a viewer entity is selected.
+
+Each edit fires `config-changed` (`{ config }`, bubbling and composed, matching stock editors).
+`fromFormData` (`src/editor.ts`) omits any key still at its default so the emitted YAML stays clean
+— the same behaviour `stubConfig`/`resolveConfig` already relies on for round-tripping.
 
 ## States
 
@@ -371,11 +387,11 @@ label and ArrowUp/ArrowDown reorder, and focus stays on the moved item's handle.
 `aria-haspopup`/`aria-expanded` and `role="menu"`; the progress bar is `role="progressbar"`.
 Every focusable control has a visible focus ring in the accent ink.
 
-**Known gaps, not fixed here:** the missing-entity notice and the "Delete" confirm-dialog button
-both use a theme colour (`--warning-color`, `--error-color`) directly as text-on-fill, which on the
-default fallback values falls short of 4.5:1 for 14 px text — the same category of tradeoff as the
-`.primary` button glyph above, and equally a per-theme value the card can't fully control without a
-runtime contrast fixup (Copilot review comments on PR #14, flagged to Garrett).
+The missing-entity notice and the "Delete" confirm-dialog button both use a theme colour
+(`--warning-color`, `--error-color`) directly as text-on-fill, which on the default fallback values
+falls short of 4.5:1 for 14 px text — the same category of tradeoff as the `.primary` button glyph
+above. Garrett decided (2026-09-15) to leave both as-is: they're the user's own theme values, and
+the card doesn't run a runtime contrast fixup on them (Copilot review comments on PR #14).
 
 ## Build
 
@@ -403,7 +419,9 @@ implements `states`, `themes.darkMode`, `connection.subscribeMessage`, `callWS` 
 flow progress, `todo/item/move`) and `callService` (add / update / remove), mutating an in-memory
 list and pushing updates to subscribers so toggling, adding, renaming, deleting, clearing and
 reordering all round-trip. Query parameters: `?scenario=N` (single scenario), `?width=px`,
-`?wide=1`. Slice 4 reuses it for README screenshots. It is not shipped.
+`?wide=1`. The "editor" checkbox mounts `listapp-list-card-editor` for the current scenario and
+echoes each `config-changed` back into a `<pre>`, so editor changes can be watched live against the
+mock `hass`. Slice 4 reuses the card side of the harness for README screenshots. It is not shipped.
 
 ## Licences
 
@@ -428,22 +446,24 @@ component's own pinned requirement) — see `requirements_test.txt` and `test.ym
 matrix, which pins the same package to the version the 2026.3 plugin's `frontend` component
 requires.
 
-Card unit tests (`frontend/test/`, 108 cases): state derivation and priorities, collapse, viewer
-gating, option defaults and validation, the `avatarColor` vectors, glyph/ink contrast over all 14
-colours, icon key mapping, availability classification, move → `previous_uid`, and rename preserving
-status. `card.test.ts` mounts the real `ListAppListCard` under happy-dom (a per-file
-`@vitest-environment`; the rest of the suite stays in node) against a fake `hass` whose
-`subscribeMessage`, `callService` and `callWS` can be held pending and resolved or rejected on cue.
-It pins the race behaviour: unsubscribe on disconnect (including a subscription that resolves only
-after disconnect), pushes for a previous entity being dropped, both overlapping failed toggles
-rolling back, no rollback over a newer push, the in-flight guards, the Completed menu opening
-upward, dialog/menu closing on disconnect, a drop for an item that left the active list, a slow
-availability check landing after recovery, the recheck interval stopping on disconnect, the
+Card unit tests (`frontend/test/`): state derivation and priorities, collapse, viewer gating, option
+defaults and validation, the `avatarColor` vectors, glyph/ink contrast over all 14 colours, icon key
+mapping, availability classification, move → `previous_uid`, rename preserving status, and the
+editor's entity selection (including the `list_id`-attribute filter over a name match), form/config
+round-trip, default-omission, and its native/`ha-form` rendering and `config-changed` emission
+(`frontend/test/editor.test.ts`, happy-dom). `card.test.ts` mounts the real `ListAppListCard` under
+happy-dom (a per-file `@vitest-environment`; the rest of the suite stays in node) against a fake
+`hass` whose `subscribeMessage`, `callService` and `callWS` can be held pending and resolved or
+rejected on cue. It pins the race behaviour: unsubscribe on disconnect (including a subscription
+that resolves only after disconnect), pushes for a previous entity being dropped, both overlapping
+failed toggles rolling back, no rollback over a newer push, the in-flight guards, the Completed menu
+opening upward, dialog/menu closing on disconnect, a drop for an item that left the active list, a
+slow availability check landing after recovery, the recheck interval stopping on disconnect, the
 subscribe backoff (retrying on its own timer rather than on `hass` updates, the 30 s cap, the reset
 after a successful subscribe, and cancellation on disconnect — all under fake timers), and an
-entry-id lookup that lands after the entity vanished being discarded.
-happy-dom has no layout, so `ResizeObserver` is stubbed and nothing asserts on geometry;
-`frontend/dev/harness.js` remains the visual check and is not run in CI.
+entry-id lookup that lands after the entity vanished being discarded. happy-dom has no layout, so
+`ResizeObserver` is stubbed and nothing asserts on geometry; `frontend/dev/harness.js` remains the
+visual check and is not run in CI.
 
 ## Open questions
 

@@ -6,6 +6,7 @@ import { repeat } from "lit/directives/repeat.js";
 import { styleMap } from "lit/directives/style-map.js";
 import { buildPalette, HA_PRIMARY_FALLBACK, resolveListColor, type Palette } from "./color.js";
 import { CARD_TYPE, resolveConfig, stubConfig, type ListAppCardConfig, type ResolvedConfig } from "./config.js";
+import { EDITOR_TAG } from "./editor.js";
 import {
   createItem,
   deleteItems,
@@ -50,7 +51,11 @@ export class ListAppListCard extends LitElement {
   ): ListAppCardConfig {
     // The Lovelace card picker calls this with only `hass` — see docs/card.md#stub-config.
     const candidates = entities.length || fallback.length ? [...entities, ...fallback] : Object.keys(hass.states);
-    return stubConfig(candidates);
+    return stubConfig(candidates, hass.states);
+  }
+
+  static getConfigElement(): HTMLElement {
+    return document.createElement(EDITOR_TAG);
   }
 
   @property({ attribute: false }) hass?: HomeAssistant;
