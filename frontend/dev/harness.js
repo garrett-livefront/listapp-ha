@@ -15,8 +15,8 @@ const entity = (id, { name, state = "3", color = null, icon = null, role = "owne
     friendly_name: name,
     supported_features: features,
     list_id: listId ?? id.replace("todo.listapp_", "list-"),
-    color,
-    icon,
+    list_color: color,
+    list_icon: icon,
     role,
   },
 });

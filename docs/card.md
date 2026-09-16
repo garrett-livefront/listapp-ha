@@ -406,7 +406,7 @@ progress, add field and section labels stay full width. There is no inner scroll
 
 ## Colour
 
-Accent = the entity's `color` attribute when it parses as hex; otherwise `avatarColor(list_id)`,
+Accent = the entity's `list_color` attribute when it parses as hex; otherwise `avatarColor(list_id)`,
 ported **verbatim** from listapp-mobile `lib/avatar.ts` so a list with no saved colour looks the
 same in HA as in the app. `frontend/test/color.test.ts` pins eleven seed → colour vectors computed
 by running the mobile function under node, including one long enough to overflow int32 (the `| 0`
@@ -439,7 +439,7 @@ computed `--primary-color` (fallback `#03a9f4`).
 
 ## Icons
 
-The `icon` attribute holds one of the 26 lucide keys the mobile app allows
+The `list_icon` attribute holds one of the 26 lucide keys the mobile app allows
 (`lib/list-appearance.ts`). `frontend/scripts/gen-icons.mjs` reads those icons' node data from the
 pinned `lucide` npm package and writes `src/icons.generated.ts` (also the 14 UI glyphs the card
 uses), so the SVG paths are bundled and nothing is fetched at runtime. Two keys differ from lucide's
@@ -533,7 +533,7 @@ static-path registration via `HomeAssistantHTTP.async_register_static_paths`, pa
 the real `http`/`frontend` components have done their own (unrelated) static-path registrations, so
 the count reflects only this integration's call.
 
-`tests/test_coordinator.py` and `tests/test_todo.py` cover `color`/`icon` through a poll, a
+`tests/test_coordinator.py` and `tests/test_todo.py` cover `list_color`/`list_icon` through a poll, a
 coordinator refresh, and a `list.updated` SSE event, for owner/editor/viewer lists with and without
 color/icon set.
 

@@ -51,13 +51,21 @@ class FakeHass implements HomeAssistant {
     this.subscribers.get(entity)?.({ items });
   }
 
-  setEntity(entity: string, state = "2", features = WRITE): void {
+  setEntity(entity: string, state = "2", features = WRITE, attrs: Record<string, unknown> = {}): void {
     this.states = {
       ...this.states,
       [entity]: {
         entity_id: entity,
         state,
-        attributes: { friendly_name: "Test", supported_features: features, list_id: "l1", list_color: null, list_icon: null, role: "owner" },
+        attributes: {
+          friendly_name: "Test",
+          supported_features: features,
+          list_id: "l1",
+          list_color: null,
+          list_icon: null,
+          role: "owner",
+          ...attrs,
+        },
       },
     };
   }
@@ -569,6 +577,17 @@ describe("show_header", () => {
     expect(root(card).querySelector("header.head")).not.toBeNull();
     expect(root(card).querySelector(".title")).not.toBeNull();
     expect(root(card).querySelector(".subline")).not.toBeNull();
+  });
+
+  it("renders the list's own color and icon, not fallbacks, when both are set", async () => {
+    hass.setEntity(ENTITY, "2", WRITE, { list_color: "#6366f1", list_icon: "plane" });
+    const card = await mount(hass, {}, [item("1", "Milk")]);
+    const haCard = root(card).querySelector("ha-card") as HTMLElement;
+    expect(haCard.style.getPropertyValue("--la-accent")).toBe("#6366f1");
+    // "plane" maps to a distinct path from the "list-checks" fallback glyph.
+    expect(root(card).querySelector(".tile svg")!.innerHTML).not.toContain(
+      'd="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"',
+    );
   });
 
   it("forces the progress bar off when the header is off, even with show_progress: true", async () => {
