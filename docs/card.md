@@ -192,6 +192,68 @@ the entry's own `?v=`, which makes a chunk-only change bust the entry too. `Stat
 registers the whole `frontend/` directory rather than the single file, since the entry's sibling
 chunk has to be reachable at the same base URL.
 
+## <a id="registry-patching"></a>Registry patching and verified registration
+
+The "Configuration error until another reload" failure survived [fast
+registration](#fast-registration), intermittently after an HA restart or hard reload. Measured live
+on Garrett's instance on 2026-09-15, in the failed state, which rules the deadline out as the cause:
+
+- The entry module `/listapp_frontend/listapp-list-card.js` was fetched at **123 ms**, took **251
+  ms**, transferred **1857 bytes**, HTTP **200** — an order of magnitude inside the 2 s deadline, and
+  not a 404.
+- **22 s later** `customElements.get('listapp-list-card')` was `undefined`, and so were
+  `listapp-list-card-impl` and `listapp-list-card-editor` — but `window.customCards` **did** contain
+  our entry. The push happens after the `define` calls, so the module ran past them, defined nothing,
+  and threw nothing.
+- The tag was genuinely free: `customElements.define('listapp-list-card', class extends HTMLElement
+  {})` succeeded by hand in that state.
+- `await import('/listapp_frontend/listapp-list-card.js?probe=<ts>')` on the same page then defined
+  all three tags immediately.
+- The registry was patched: `Function.prototype.toString.call(customElements.define)` and `.get` were
+  both non-native, `Object.getPrototypeOf(customElements).constructor.name` was `"x"` (minified), and
+  `Element.prototype.attachShadow` was patched too — though `customElements instanceof
+  CustomElementRegistry` still held. A detached iframe on the same page reported a **native**
+  `define`, so the patch is installed on the main window specifically. The shape of it — registry
+  plus `attachShadow` — is a **scoped custom element registry polyfill**, which HA's own frontend
+  ships. A second user sees the same failure.
+
+  **card-mod was suspected first and is not the culprit** — recorded here so the wrong diagnosis
+  doesn't get made twice. card-mod patches the *prototypes of already-defined* HA elements via
+  `whenDefined`/`get`; it never wraps `define`. The guard below is therefore written against any
+  registry wrapper, including HA's own scoped-registry polyfill, and its warning deliberately names
+  no specific add-on.
+
+So a third-party wrapper around `customElements.define` can swallow a call: no exception, no
+definition. The 2 s-deadline explanation does **not** cover this — that one requires the tag to be
+undefined *at render time and then defined later*, and it is driven by how long the bundle takes to
+arrive and evaluate. Here the bundle arrived in 251 ms, evaluated to completion, and the tag was
+still undefined 22 s afterwards. Shrinking or speeding up the entry could never have fixed it.
+
+The entry therefore **verifies after every `define` with `get`** rather than assuming it took, and
+retries: a microtask, then tasks at 0 ms, 100 ms and 500 ms — five attempts in total, then it stops
+and `console.warn`s once, naming registry patching as the likely cause so the next person doesn't
+re-measure all of the above. The delays are short because the re-import probe defined the tags
+instantly: the patch's window is transient, not permanent, so spacing attempts out further buys
+nothing and risks landing after HA has already rendered the error card.
+
+`window.customCards` is only pushed **once `listapp-list-card` actually resolves**. Advertising the
+card to the picker while no element exists is precisely what turned a silent failure into HA's
+context-free "Configuration error" — the card appeared installed and every dashboard using it broke.
+An unlisted card is the better failure: the console warning explains it, and a reload fixes it.
+
+### Why not borrow a pristine registry from an iframe
+
+A same-origin `<iframe>` does have an unpatched `customElements` — measured on the affected page, a
+detached iframe reports a native `define` while the main window's is wrapped — and it was evaluated,
+but it can't help here and is deliberately not shipped. A registry is per-window: defining the tag in the iframe
+registers it in *that* document, so `document.createElement('listapp-list-card')` in HA's document
+still gets an `HTMLUnknownElement`. Stealing the iframe's native `define` and invoking it against the
+main registry (`iframeDefine.call(window.customElements, ...)`) isn't a way around it either — the
+native method reaches the registry through internal slots the patched object no longer backs
+directly, and the constructor would belong to the iframe's realm, so its `HTMLElement` prototype
+chain doesn't match the host document's. Retrying the host registry is the only approach that
+actually defines the tag where HA will look for it.
+
 ## Architecture
 
 Source lives in `frontend/` at the repo root (Lit 3 + TypeScript, bundled by esbuild). The build

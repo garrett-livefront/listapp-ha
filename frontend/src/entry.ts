@@ -155,20 +155,61 @@ class ListAppListCardEditorEntry extends LazyHost {
   protected override readonly implTag = EDITOR_IMPL_TAG;
 }
 
-if (!customElements.get(CARD_TYPE)) {
-  customElements.define(CARD_TYPE, ListAppListCardEntry);
+// Retries after each unverified define, and holds the picker entry back until the tag resolves —
+// see docs/card.md#registry-patching
+const RETRY_DELAYS_MS = [0, 100, 500];
+const REGISTRY_WARNING =
+  "listapp-list-card: customElements.define did not take. Something on this page is wrapping " +
+  "the custom element registry — a scoped custom element registry polyfill, or another frontend " +
+  'integration patching customElements. Listapp cards will show "Configuration error" until the ' +
+  "page is reloaded; see https://github.com/garrett-livefront/listapp-ha docs/card.md#registry-patching";
+
+function defineAndVerify(
+  registry: CustomElementRegistry,
+  tag: string,
+  ctor: CustomElementConstructor,
+): boolean {
+  if (registry.get(tag)) {
+    return true;
+  }
+  try {
+    registry.define(tag, ctor);
+  } catch {
+    // A concurrent definition of the same tag is a success, not a failure — the check below decides.
+  }
+  return registry.get(tag) !== undefined;
 }
 
-if (!customElements.get(EDITOR_TAG)) {
-  customElements.define(EDITOR_TAG, ListAppListCardEditorEntry);
+function advertiseToPicker(): void {
+  const cards = (window.customCards ??= []);
+  if (!cards.some((card) => card.type === CARD_TYPE)) {
+    cards.push({
+      type: CARD_TYPE,
+      name: "Listapp list",
+      description: "A Listapp list with its colour, icon and progress.",
+      preview: true,
+    });
+  }
 }
 
-window.customCards = window.customCards ?? [];
-if (!window.customCards.some((card) => card.type === CARD_TYPE)) {
-  window.customCards.push({
-    type: CARD_TYPE,
-    name: "Listapp list",
-    description: "A Listapp list with its colour, icon and progress.",
-    preview: true,
-  });
+export function registerCardElements(registry: CustomElementRegistry, attempt = 0): void {
+  const card = defineAndVerify(registry, CARD_TYPE, ListAppListCardEntry);
+  const editor = defineAndVerify(registry, EDITOR_TAG, ListAppListCardEditorEntry);
+  if (card) {
+    advertiseToPicker();
+  }
+  if (card && editor) {
+    return;
+  }
+  if (attempt > RETRY_DELAYS_MS.length) {
+    console.warn(REGISTRY_WARNING);
+    return;
+  }
+  if (attempt === 0) {
+    queueMicrotask(() => registerCardElements(registry, 1));
+    return;
+  }
+  setTimeout(() => registerCardElements(registry, attempt + 1), RETRY_DELAYS_MS[attempt - 1]);
 }
+
+registerCardElements(customElements);
