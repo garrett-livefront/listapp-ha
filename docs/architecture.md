@@ -251,8 +251,8 @@ server route: newly-shared lists are deliberately not added mid-stream either).
 ## Lovelace card
 
 The bundled "ListApp list" card — the `color`/`icon`/`role`/`list_id` attribute contract, how the
-card JS is served and registered once per instance, and cache busting: see
-[`docs/card.md`](card.md).
+card JS is served and registered once per instance (from the domain's `async_setup`, not per config
+entry — [why](card.md#integration-level)), and cache busting: see [`docs/card.md`](card.md).
 
 ## Brand icon
 
