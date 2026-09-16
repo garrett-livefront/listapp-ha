@@ -397,7 +397,6 @@ export class ListAppListCard extends LitElement {
       "--la-accent": palette.accent,
       "--la-glyph": palette.glyph,
       "--la-ink": palette.ink,
-      "--la-tint": palette.tint,
       "--la-field": palette.field,
       "--la-hover": palette.hover,
       "--la-track": palette.track,
@@ -1424,8 +1423,8 @@ export class ListAppListCard extends LitElement {
       border-radius: 14px;
       display: grid;
       place-items: center;
-      background: var(--la-tint);
-      color: var(--la-ink);
+      background: var(--la-accent);
+      color: var(--la-glyph);
     }
     .state-icon.done {
       width: 44px;

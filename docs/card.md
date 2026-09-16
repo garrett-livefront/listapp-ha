@@ -293,7 +293,7 @@ both files; see [Fast registration](#fast-registration) for why the split exists
 | `src/listapp-list-card.ts` | the `LitElement`; rendering, subscriptions, event handlers, styles |
 | `src/model.ts` | pure state derivation: split/collapse items, viewer gating, card state, availability classification, move → `previous_uid` |
 | `src/config.ts` | option defaults and validation, `getStubConfig` |
-| `src/color.ts` | `avatarColor` port, palette (accent / glyph / ink / tint) and contrast maths |
+| `src/color.ts` | `avatarColor` port, palette (accent / glyph / ink) and contrast maths |
 | `src/icons.ts` + `src/icons.generated.ts` | lucide path data for the 26 list icons and the card's UI glyphs |
 | `src/ha.ts` | the slice of the HA frontend API the card touches: types, service and websocket helpers, `navigate` |
 | `src/strings.ts` | every user-facing string (English only — see [Open questions](#open-questions)) |
@@ -585,20 +585,26 @@ matters). If the mobile palette or hash changes, those vectors fail here.
 From the accent, `color.ts#buildPalette` derives:
 
 - **glyph** — the colour of white-on-accent content (tile icon, checked tick, accent-filled button
-  labels). Always white, matching HA's stock to-do card and the design's top tile. Garrett decided
-  (2026-09-15) to accept the contrast this costs rather than run a dark-glyph fallback: white falls
-  below the WCAG 3:1 graphics threshold on 8 of the app's 14 list colours (worst cases lime
-  `#84cc16` at 1.98:1 and yellow `#eab308` at 1.92:1; his own teal `#14b8a6` sits at 2.49:1). He has
-  already accepted the same trade in the mobile app, and plans a separate accent colour in the
-  palette later so brand colour and contrast can both be met. This does **not** pass 3:1 on those
-  eight colours; `frontend/test/color.test.ts` pins the always-white behaviour rather than a
-  contrast floor.
+  labels, and — since 2026-09-16 — the empty-state tile). Always white, matching HA's stock to-do
+  card and the design's top tile. Garrett decided (2026-09-15) to accept the contrast this costs
+  rather than run a dark-glyph fallback: white falls below the WCAG 3:1 graphics threshold on 8 of
+  the app's 14 list colours (worst cases lime `#84cc16` at 1.98:1 and yellow `#eab308` at 1.92:1;
+  his own teal `#14b8a6` sits at 2.49:1). He has already accepted the same trade in the mobile app,
+  and plans a separate accent colour in the palette later so brand colour and contrast can both be
+  met. This does **not** pass 3:1 on those eight colours; `frontend/test/color.test.ts` pins the
+  always-white behaviour rather than a contrast floor. This is the 3:1 **graphics** contrast case,
+  distinct from the 4.5:1 text case that **ink** (below) satisfies — don't conflate the two when
+  reasoning about a tile or icon's contrast.
+  The empty-state tile (`.state-icon`) used to be the odd one out — a pale accent-tinted square with
+  an accent-coloured glyph (**tint**, now removed) instead of the accent-filled, white-glyph
+  treatment every other tile uses (the header tile, the all-done tile, and — matching this same
+  correction — the OAuth error tile in listapp-api#112). It now matches: `background: var(--la-accent)`,
+  `color: var(--la-glyph)`, same size and radius as before.
 - **ink** — accent-coloured text and icons on the card background ("Show N more", the +, links).
   Dark themes lighten the accent by 38 % as the design does. Light themes darken any accent that
   doesn't already reach 4.5:1 against `--card-background-color`, in 12 % steps until it does (or
   reaches black) — not just the light accents above; `#3b82f6`, for instance, is also below 4.5:1
   on white and gets darkened the same way (Copilot review comment on PR #14).
-- **tint** — the accent at 18 % alpha (dark) or 10 % (light) for the empty-state tile.
 - **field / hover / track** — the neutral surfaces the design draws as fixed greys (add field
   background, row and menu hover, progress track). They are translucent black or white at the
   design's alpha, so they sit on whatever `--card-background-color` the theme has instead of
@@ -729,6 +735,45 @@ reordering all round-trip. Query parameters: `?scenario=N` (single scenario), `?
 `?wide=1`. The "editor" checkbox mounts `listapp-list-card-editor` for the current scenario and
 echoes each `config-changed` back into a `<pre>`, so editor changes can be watched live against the
 mock `hass`. Slice 4 reuses the card side of the harness for README screenshots. It is not shipped.
+
+### README screenshot recipe
+
+Use the tracked script, from `frontend/`, as two separate commands (not `cd frontend && npm run dev
+&` — backgrounding that whole list forks a subshell, so the `cd` never affects the shell you run the
+next command in):
+
+```
+cd frontend
+npm run dev &
+node scripts/capture-screenshots.mjs
+```
+
+(see [CONTRIBUTING.md](../CONTRIBUTING.md)). It drives the dev harness over CDP at the harness's
+`width=380` slider value, then clips each rendered `.theme` column (card plus its 16px padding) at
+`deviceScaleFactor: 2`. The 824px width in every committed image is a *consequence* of that —
+`main`'s CSS grid gives each theme column exactly its content's minimum width (380 + 16px × 2 =
+412), doubled by the DPR — not a target hit by any other means. **Never resize, scale, or crop a
+capture after the fact.** If a future design change moves the natural width off 824, that's fine;
+report the new width rather than forcing the old one.
+
+The script writes light **and** dark for all six harness scenarios (12 files) — it doesn't know the
+README only references 7. Delete the ones it writes that the README doesn't link (currently
+`card-colored-icon-dark`, `card-empty-dark`, `card-unavailable-reauth-light`, `card-viewer-dark`,
+`card-collapse-dark` — Garrett's call on PR #29 was to drop them rather than keep them in sync) after
+running it, or restore them from git history if a future change needs them back.
+
+Before committing, verify the icon tile — CSS `38×38` — measures exactly `76×76` in the output.
+`card-unavailable-reauth-dark` has no tile (it's the reauth banner state), so that check doesn't
+apply to it.
+
+This check exists because of a 2026-09-16 defect on #29: an ad hoc Playwright script (not the
+tracked one above) force-resized captures to match the old 824px width, stretching every tile to
+122×115 — and, in a second pass, used a different clip (the card element alone, without the
+column's padding) that landed on the right width by a different, undocumented route while missing
+the tracked script entirely. Both passes went out with CI fully green and Copilot reporting "wasn't
+able to review any files" — nothing in the pipeline can inspect a PNG's content, so **a human
+reviewing the rendered result is the only check that catches either kind of defect.** Use the
+tracked script; don't reinvent the capture.
 
 ## Licences
 
