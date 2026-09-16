@@ -174,7 +174,7 @@ class ListAppCoordinator(DataUpdateCoordinator[dict[str, ListAppList]]):
             list_id, payload = envelope["listId"], envelope["payload"]
             handler(self, dict(self.data), list_id, payload)
         except (ValueError, KeyError, TypeError, AttributeError):
-            _LOGGER.debug("Ignoring malformed ListApp %s event", event.event)
+            _LOGGER.debug("Ignoring malformed Listapp %s event", event.event)
             return
         self._pending.append((handler, list_id, payload))
         self._schedule_batch()

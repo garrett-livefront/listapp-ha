@@ -28,7 +28,7 @@ OAuth2 authorization code with **PKCE**, against Ory Hydra, through HA's
 - **Scopes.** `offline_access lists:read lists:write` by default. Read-only mode (options) requests
   `offline_access lists:read`. Scopes are chosen by the flow handler's `extra_authorize_data`, not
   the implementation, because the implementation is shared across entries.
-- **Unique ID** is the ListApp user id from `GET /me`, so an account can't be linked twice, and a
+- **Unique ID** is the Listapp user id from `GET /me`, so an account can't be linked twice, and a
   reauth with a different account aborts with `wrong_account`.
 - **Reauth** starts on a 401 from the API, or when Hydra refuses a refresh (HA maps any 4xx from the
   token endpoint to `OAuth2TokenRequestReauthError`).
@@ -58,11 +58,11 @@ override both, and they're read when the integration module is imported. See
   two accounts gives two distinct entities.
 - **One service device per list** (identifiers `<account id>_<list id>`), named after the list, and
   the todo entity is that device's primary entity (`_attr_name = None`), so the friendly name is the
-  bare list title instead of "ListApp <title>". `todo.py`'s `sync_entities` keeps the device name in
+  bare list title instead of "Listapp <title>". `todo.py`'s `sync_entities` keeps the device name in
   sync on every coordinator update — HA doesn't re-push `device_info` on a rename, only at entity
   creation — and removes a list's device alongside its entity-registry entry when the list
   disappears. **Upgrade impact:** unique_ids are unchanged, so existing entity_ids and dashboards
-  keep working; only the displayed name changes, and the old single "ListApp" account-level device
+  keep working; only the displayed name changes, and the old single "Listapp" account-level device
   (identifier `<account id>`) is removed on the next setup as an orphan.
 - **Lists disappear, but never appear, on their own.** A selected list that is deleted or whose
   access is revoked (a 404 on poll, or `list.deleted`/`member.deleted` on the stream) is dropped
@@ -256,7 +256,7 @@ server route: newly-shared lists are deliberately not added mid-stream either).
 
 ## Lovelace card
 
-The bundled "ListApp list" card — the `list_color`/`list_icon`/`role`/`list_id` attribute contract,
+The bundled "Listapp list" card — the `list_color`/`list_icon`/`role`/`list_id` attribute contract,
 how the card JS is served and registered once per instance (from the domain's `async_setup`, not per
 config entry — [why](card.md#integration-level)), and cache busting: see [`docs/card.md`](card.md).
 

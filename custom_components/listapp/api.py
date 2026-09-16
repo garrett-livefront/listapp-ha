@@ -119,7 +119,7 @@ class ListAppClient:
                     return None
                 return await response.json()
         except (TimeoutError, ClientError) as err:
-            raise ListAppUnavailableError(f"{method} {path} could not reach ListApp") from err
+            raise ListAppUnavailableError(f"{method} {path} could not reach Listapp") from err
 
     async def async_get_me(self) -> dict[str, Any]:
         return await self._request(hdrs.METH_GET, "/me")

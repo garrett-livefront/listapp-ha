@@ -9,8 +9,8 @@ Slice 1 (`card-data-registration`) shipped the attribute contract and delivery. 
 is the card itself. Slice 3 adds the visual editor; slice 4 the README section and screenshots.
 
 All card-facing strings (the picker name/description, dialogs, empty and error states) use
-"Listapp" — the in-product brand casing — even where the integration's own docs and translations
-say "ListApp" (Copilot review comment on PR #14).
+"Listapp" — the in-product brand casing (Copilot review comment on PR #14) — which the
+2026-09-15 branding sweep also brought the rest of this repo's user-facing text into line with.
 
 ## Attribute contract
 
@@ -363,7 +363,7 @@ Derived in `model.ts#deriveView`, in priority order:
 view only" — `show_header: false` drops that marker along with the rest of the header, see
 "show_header" below. Both signals
 are checked because the integration's `supported_features` is what HA actually enforces, while
-`role` is what ListApp says; if they ever disagree the card errs on the read-only side.
+`role` is what Listapp says; if they ever disagree the card errs on the read-only side.
 
 ### Auth vs transient unavailability
 
@@ -372,7 +372,7 @@ card calls `config_entries/get` (domain `listapp`) and `config_entries/flow/prog
 (`model.ts#classifyAvailability`): a flow with `handler == "listapp"` and `context.source ==
 "reauth"` means auth; failing that, a `setup_error` entry whose `reason` mentions auth/token/sign
 in; otherwise transient. Both checks are scoped to the entity's own config entry — looked up once per
-entity via `config/entity_registry/get` — so with two ListApp accounts linked, a reauth on account A
+entity via `config/entity_registry/get` — so with two Listapp accounts linked, a reauth on account A
 doesn't put account B's cards into the auth state (Copilot review comment on PR #14). If the registry
 lookup fails the scope widens to any `listapp` entry. Only a *current* lookup is cached: the
 round-trip can outlive the cache it was meant to fill (`willUpdate` clears `_entryIdFor`/`_entryId`

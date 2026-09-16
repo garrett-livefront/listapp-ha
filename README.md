@@ -1,4 +1,4 @@
-# ListApp for Home Assistant
+# Listapp for Home Assistant
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
 [![GitHub release](https://img.shields.io/github/v/release/garrett-livefront/listapp-ha)](https://github.com/garrett-livefront/listapp-ha/releases)
@@ -7,10 +7,10 @@
 [![Minimum Home Assistant version](https://img.shields.io/badge/Home%20Assistant-2026.3.0%2B-41BDF5.svg)](https://www.home-assistant.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/garrett-livefront/listapp-ha/blob/main/LICENSE)
 
-A Home Assistant custom integration that links a ListApp account and exposes its lists as
+A Home Assistant custom integration that links a Listapp account and exposes its lists as
 `todo` entities, updated live as they change.
 
-- Each selected ListApp list becomes its own `todo` entity named after the list, so lists work
+- Each selected Listapp list becomes its own `todo` entity named after the list, so lists work
   with HA's built-in to-do card, voice assistants, and automations.
 - Updates arrive over a live stream; if it disconnects, the integration falls back to polling
   every 60 seconds until it reconnects.
@@ -25,7 +25,7 @@ A Home Assistant custom integration that links a ListApp account and exposes its
 - The **My Home Assistant** integration enabled (it's part of `default_config`, so most installs
   already have it; if you've removed `default_config`, add `my:` to `configuration.yaml`). Signing
   in needs it to redirect back to your instance.
-- A ListApp account.
+- A Listapp account.
 
 ## Installation
 
@@ -35,11 +35,11 @@ This repository is not yet in the HACS default store — add it as a custom repo
 
 1. Use the button above, or HACS → **⋮** (top right) → **Custom repositories**, repository
    `https://github.com/garrett-livefront/listapp-ha`, category **Integration**.
-2. Install **ListApp**, then restart Home Assistant.
+2. Install **Listapp**, then restart Home Assistant.
 
 [![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=listapp)
 
-3. Use the button above, or **Settings → Devices & services → Add integration → ListApp**, then
+3. Use the button above, or **Settings → Devices & services → Add integration → Listapp**, then
    sign in with Google or Apple in the browser window that opens and pick the lists to add.
 
 The first time you sign in (or click a My Home Assistant button), my.home-assistant.io asks for
@@ -48,7 +48,7 @@ you're signing in with.
 
 ## Dashboard card
 
-A branded "Listapp list" card ships **inside** the integration — installing ListApp from HACS gives
+A branded "Listapp list" card ships **inside** the integration — installing Listapp from HACS gives
 you both the entities and the card, with nothing else to add and no separate resource to register.
 
 <p>
@@ -106,18 +106,18 @@ button instead of the list:
 
 ## What data is shared
 
-Signing in grants this integration OAuth scopes to read and write your ListApp lists
+Signing in grants this integration OAuth scopes to read and write your Listapp lists
 (`lists:read`, plus `lists:write` unless you choose read-only mode) and `offline_access` so it can
 refresh your session without asking you to sign in again. It also reads your account ID and email
 to identify the connection — no other account information.
 
 Removing the integration from Home Assistant stops it from being used locally, but does not revoke
-the underlying access grant on ListApp's server. To fully revoke access, use the ListApp app's
+the underlying access grant on Listapp's server. To fully revoke access, use the Listapp app's
 Connected apps screen (coming soon).
 
 ## Troubleshooting
 
-- **Reauthentication required**: Home Assistant asks you to sign in again when ListApp refuses to
+- **Reauthentication required**: Home Assistant asks you to sign in again when Listapp refuses to
   refresh your session or rejects an API request as unauthenticated (your grant expired or was
   revoked), or when you change read-only mode in **Configure** — the previous grant no longer
   matches. Signing in again restores it. A transient network or server error on a list refresh

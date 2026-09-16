@@ -37,7 +37,7 @@ async def _setup(hass: HomeAssistant, entry: MockConfigEntry) -> None:
 
 async def test_setup_and_unload(hass: HomeAssistant, setup_integration: MockConfigEntry) -> None:
     assert setup_integration.state is ConfigEntryState.LOADED
-    assert ListAppOAuth2Implementation(hass).name == "ListApp"
+    assert ListAppOAuth2Implementation(hass).name == "Listapp"
     assert not _has_reauth_flow(hass)
 
     assert await hass.config_entries.async_unload(setup_integration.entry_id)
