@@ -622,20 +622,39 @@ current names and are mapped in the script: the app's `home` is lucide's `house`
 
 Sizes, weights, letter-spacing, radii, padding and gaps in `listapp-list-card.ts`'s styles are the
 design's values verbatim (variant 1b "quiet rail", `HA Todo Card.dc.html` in the Claude Design
-project): 38 px tile with an 11 px radius, 17.5 px/800 title at −0.2 px tracking, 12.5 px/600
-subline, 5 px progress bar, the add field as a filled block with a 2 px accent underline and the +
-on the right, 12 px/800 section labels at 1.2 px tracking, 13.5 px/700 "Show N more". Item text,
-the checkbox and the glyph deliberately match HA's stock to-do card instead of the mock (Garrett
-compared the two side by side, 2026-09-15): item text is `--ha-font-size-m`/`--ha-font-weight-normal`
-(14 px/400, active and completed alike, not the mock's 15.5 px/600–500), the checkbox is 20 px with
-`--ha-border-radius-sm` (4 px, not the mock's 22 px/7 px), and the glyph is always white (see
-[Colour](#colour)). Other deliberate departures from the mock, all decided before the build: HA
-theme variables and font instead of the fixed greys and Manrope; no "shared by" footer, and no
-header ⋯ menu at all; native controls; the transient-unavailable and viewer-empty wording. The
-card's outer radius, border and shadow are left to `ha-card` so it matches the neighbouring cards in
-any theme, rather than forcing the mock's 16 px. The ⋯ is drawn as three 3.5 px dots stacked
-vertically in CSS, not a lucide glyph, matching the stock card's vertical kebab rather than the
-mock's horizontal ellipsis.
+project): 38 px tile with an 11 px radius, 5 px progress bar, 12 px/800 section labels at 1.2 px
+tracking, 13.5 px/700 "Show N more". Item text, the checkbox, the glyph, the add field, and the
+title/subline typography
+deliberately match HA's stock look instead of the mock: item text is
+`--ha-font-size-m`/`--ha-font-weight-normal` (14 px/400, active and completed alike, not the mock's
+15.5 px/600–500), the checkbox is 20 px with `--ha-border-radius-sm` (4 px, not the mock's 22 px/7
+px), and the glyph is always white (see [Colour](#colour)). Garrett compared the card side by side
+with a stock HA card and his own dashboard on a dark theme (2026-09-15) and asked for four further
+adjustments in the same direction: the unchecked checkbox border now uses
+`--ha-color-border-neutral-normal` (falling back to `--la-muted`/`--secondary-text-color`) instead
+of `--la-muted` directly — stock `ha-checkbox` uses that dedicated neutral-border token, which in
+HA's dark theme resolves noticeably dimmer than `--secondary-text-color`, which is what was making
+ours read too bright; the border width was already 2 px like stock and did not change. The title
+moved from the mock's fixed 17.5 px/800 at −0.2 px tracking to HA's own card-header treatment —
+`--ha-card-header-font-size` (falling back to `--ha-font-size-2xl`), `--ha-font-weight-normal`, and
+stock's −0.012em letter-spacing — matching `ha-card`'s own `<h1 class="card-header">` styling; this
+was matched against HA's stock card header rather than Garrett's own "Recent Automation Activity"
+card, whose source wasn't available to check directly. The subline kept its colour
+(`--la-muted`) but moved from the mock's fixed 12.5 px/600 to match the item text's typography,
+`--ha-font-size-m`/`--ha-font-weight-normal` (14 px/400). The add field moved from its previous filled block with 13 px/14 px padding, 15.5 px/500 text, and
+a 10 px radius on the top corners only to stock's size and shape: `hui-todo-list-card`'s add row is an `ha-input` whose default (material) appearance
+is 56 px tall with `0 var(--ha-space-4)` (16 px) padding and 14 px/400 text
+(`--ha-font-size-m`/`--ha-font-weight-normal`, same as item text), and its filled part is rounded
+`var(--ha-border-radius-sm)` (4 px) on the **top corners only**, square on the bottom — the same
+Material-filled-textfield shape ours already used, just at the stock radius value instead of the
+mock's 10 px. Our field's colours are unchanged: `--la-field` background and the `--la-accent`
+underline are Garrett's call, not stock's. Other deliberate departures from the mock,
+all decided before the build: HA theme variables and font instead of the fixed greys and Manrope; no
+"shared by" footer, and no header ⋯ menu at all; native controls; the transient-unavailable and
+viewer-empty wording. The card's outer radius, border and shadow are left to `ha-card` so it matches
+the neighbouring cards in any theme, rather than forcing the mock's 16 px. The ⋯ is drawn as three
+3.5 px dots stacked vertically in CSS, not a lucide glyph, matching the stock card's vertical kebab
+rather than the mock's horizontal ellipsis.
 
 ## Theming
 

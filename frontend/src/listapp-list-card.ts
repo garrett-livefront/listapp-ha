@@ -1116,9 +1116,9 @@ export class ListAppListCard extends LitElement {
     }
     .title {
       margin: 0;
-      font-size: 17.5px;
-      font-weight: 800;
-      letter-spacing: -0.2px;
+      font-size: var(--ha-card-header-font-size, var(--ha-font-size-2xl, 1.5rem));
+      font-weight: var(--ha-font-weight-normal, 400);
+      letter-spacing: -0.012em;
       line-height: 1.25;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1126,8 +1126,8 @@ export class ListAppListCard extends LitElement {
     }
     .subline {
       margin: 1px 0 0;
-      font-size: 12.5px;
-      font-weight: 600;
+      font-size: var(--ha-font-size-m, 14px);
+      font-weight: var(--ha-font-weight-normal, 400);
       color: var(--la-muted);
     }
 
@@ -1151,8 +1151,10 @@ export class ListAppListCard extends LitElement {
       justify-content: space-between;
       gap: 10px;
       margin: 16px 18px 0;
-      padding: 13px 14px;
-      border-radius: 10px 10px 0 0;
+      box-sizing: border-box;
+      height: 56px;
+      padding: 0 var(--ha-space-4, 16px);
+      border-radius: var(--ha-border-radius-sm, 4px) var(--ha-border-radius-sm, 4px) 0 0;
       background: var(--la-field);
       border-bottom: 2px solid var(--la-accent);
     }
@@ -1161,8 +1163,8 @@ export class ListAppListCard extends LitElement {
       min-width: 0;
       padding: 0;
       font: inherit;
-      font-size: 15.5px;
-      font-weight: 500;
+      font-size: var(--ha-font-size-m, 14px);
+      font-weight: var(--ha-font-weight-normal, 400);
       line-height: 20px;
       color: var(--primary-text-color);
       background: transparent;
@@ -1292,7 +1294,7 @@ export class ListAppListCard extends LitElement {
       height: 20px;
       box-sizing: border-box;
       border-radius: var(--ha-border-radius-sm, 4px);
-      border: 2px solid var(--la-muted);
+      border: 2px solid var(--ha-color-border-neutral-normal, var(--la-muted));
       display: grid;
       place-items: center;
       color: transparent;
