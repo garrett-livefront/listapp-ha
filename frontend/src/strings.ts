@@ -9,6 +9,10 @@ export const STRINGS = {
   clearConfirmTitle: "Clear completed items?",
   clearConfirmText: (n: number) =>
     `This will permanently delete ${n} completed ${n === 1 ? "item" : "items"} from the list.`,
+  uncheckAll: "Uncheck all",
+  uncheckConfirmTitle: "Uncheck all completed items?",
+  uncheckConfirmText: (n: number) =>
+    `This will mark ${n} completed ${n === 1 ? "item" : "items"} as not done. Nothing is deleted.`,
   cancel: "Cancel",
   delete: "Delete",
   save: "Save",
