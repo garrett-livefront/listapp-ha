@@ -230,12 +230,35 @@ PR #14).
 | `entity` | required | a well-formed `todo.<object_id>` entity id; anything else throws in `setConfig` |
 | `title` | entity's friendly name | override |
 | `use_list_color` | `true` | `false` uses the theme's `--primary-color` as the accent |
-| `show_title` | `true` | `false` hides the title text only; the icon tile and subline stay (as in the design) |
+| `show_header` | `true` | `false` hides the whole header block — icon tile, title and subline — and forces the progress bar off too, regardless of `show_progress` |
 | `show_add` | `true` | the add field; always hidden for viewers regardless |
 | `show_completed` | `true` | the Completed section |
-| `show_progress` | `true` | the progress bar under the header |
+| `show_progress` | `true` | the progress bar under the header; ignored (forced off) while `show_header` is `false` |
 | `collapse_to` | `0` (off) | show N active items and a "Show N more" disclosure; must be a non-negative integer |
 | `item_tap_action` | `toggle` | `toggle` checks/unchecks on tap; `edit` opens the rename/delete dialog. The checkbox itself always toggles |
+
+### `show_header` (renamed from `show_title`)
+
+`show_title` only hid the `<h2>`, leaving the icon tile, subline and progress bar visible — not
+what "show header" suggests. Renamed to `show_header` and widened to hide the entire header block
+(icon tile, title, subline) plus the progress bar underneath it, regardless of `show_progress`. The
+card was still unreleased (no GitHub release published) when this changed, so `show_title` is a
+hard error in `resolveConfig` rather than a silent legacy alias — nothing shipped depended on the
+old name.
+
+**Viewer subline, decided:** the subline is also how a viewer learns a list is view-only ("N items ·
+view only"). Garrett decided (2026-09-15) that hiding the header hides that marker too, with no
+special case to keep it visible — the card is already fully non-interactive for a viewer (no add
+field, no toggling, no menus) regardless of `show_header`, so the text was reinforcing a state the
+UI already enforces, not the only signal of it. A config that says "hide the header" hides the whole
+header.
+
+**Clear-completed stays reachable.** With `show_completed: false` and completed items present, the
+header exception already moves the Clear-completed menu there (see "Menus and dialogs" above) since
+the Completed section that normally hosts it never renders. `show_header: false` hides the visual
+header but not that action: it renders in its own single-row `.head-clear-only` bar instead, so
+`show_header: false` + `show_completed: false` doesn't leave completed items permanently stuck
+(Copilot review comment on PR #19). `getCardSize()` counts that bar's row when it applies.
 
 ## Editor
 
@@ -246,7 +269,9 @@ falls back to native theme-styled controls otherwise, waiting on `customElements
 case `ha-form` hasn't loaded yet. Fields: entity (restricted to `todo.` entities carrying `list_id`,
 falling back to every `todo.` entity), title override, the five booleans, `collapse_to`, and
 `item_tap_action`. A hint under the entity picker notes the add field is always hidden for
-view-only lists regardless of `show_add`, once a viewer entity is selected.
+view-only lists regardless of `show_add`, once a viewer entity is selected. The `show_progress`
+control is disabled (`ha-form`'s `disabled` on the schema row; the native fallback path disables its
+own checkbox) while `show_header` is off, since the toggle would have no effect.
 
 Each edit fires `config-changed` (`{ config }`, bubbling and composed, matching stock editors).
 `fromFormData` (`src/editor.ts`) omits any key still at its default so the emitted YAML stays clean
@@ -261,14 +286,16 @@ Derived in `model.ts#deriveView`, in priority order:
 | `missing` | entity not in `hass.states` | warning row "Entity not found" |
 | `unavailable_auth` | entity `unavailable`/`unknown` **and** a `listapp` reauth flow is in progress (or the config entry is in `setup_error` with an auth-flavoured reason) | replaces header and body: warning triangle, "List unavailable", "Listapp needs you to sign in again…", **Sign in** |
 | `unavailable_transient` | `unavailable`/`unknown` otherwise | same layout with a cloud-off icon, "Can't reach Listapp right now", **Check integration** |
-| `loading` | subscribed, no message yet | header only |
+| `loading` | subscribed, no message yet | header only (nothing at all if `show_header: false`) |
 | `empty` | zero items | check-square tile, "Nothing on this list", "Add the first item above, or ask Assist to add one." (with `show_add: false`: "Ask Assist or the Listapp app to add the first item."; viewers see "Nothing has been added yet.") |
 | `all_done` | items but no active | accent circle with a check, "All done", "Every item on this list is checked off." or "N completed items are hidden." when `show_completed: false` |
 | `list` | otherwise | Active and Completed sections |
 
 **Viewer** is `role == "viewer"` **or** `supported_features` lacking `CREATE_TODO_ITEM` or
 `UPDATE_TODO_ITEM`. Viewers get no add field, no menus, no checkbox interaction (the input is
-`disabled`), no hover tint, no reorder, and the subline reads "N items · view only". Both signals
+`disabled`), no hover tint, no reorder, and (while `show_header` is on) the subline reads "N items ·
+view only" — `show_header: false` drops that marker along with the rest of the header, see
+"show_header" below. Both signals
 are checked because the integration's `supported_features` is what HA actually enforces, while
 `role` is what ListApp says; if they ever disagree the card errs on the read-only side.
 

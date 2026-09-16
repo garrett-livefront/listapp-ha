@@ -96,10 +96,10 @@ const SCENARIOS = [
     config: { use_list_color: false },
   },
   {
-    name: "show_title/show_progress/show_add: false, title override ignored",
+    name: "show_header/show_progress/show_add: false, title override ignored",
     entity: entity("todo.listapp_bare", { name: "Bare", color: "#06b6d4", icon: "coffee" }),
     items: items("One", "Two", "*Three"),
-    config: { show_title: false, show_progress: false, show_add: false, title: "Ignored" },
+    config: { show_header: false, show_progress: false, show_add: false, title: "Ignored" },
   },
   {
     name: "title override",

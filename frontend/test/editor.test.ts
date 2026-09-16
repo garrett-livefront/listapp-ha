@@ -46,7 +46,7 @@ describe("toFormData / fromFormData round trip", () => {
       entity: "todo.a",
       title: "Custom title",
       use_list_color: false,
-      show_title: false,
+      show_header: false,
       show_add: false,
       show_completed: false,
       show_progress: false,
@@ -146,12 +146,28 @@ describe("ListAppListCardEditor", () => {
     titleInput.value = "Custom title";
     titleInput.dispatchEvent(new Event("input"));
 
-    const showTitleCheckbox = inputs[2] as HTMLInputElement;
-    showTitleCheckbox.checked = false;
-    showTitleCheckbox.dispatchEvent(new Event("change"));
+    const showHeaderCheckbox = inputs[2] as HTMLInputElement;
+    showHeaderCheckbox.checked = false;
+    showHeaderCheckbox.dispatchEvent(new Event("change"));
 
     expect(events).toHaveLength(2);
-    expect(events[1]!.config).toMatchObject({ title: "Custom title", show_title: false });
+    expect(events[1]!.config).toMatchObject({ title: "Custom title", show_header: false });
+  });
+
+  it("disables the show_progress control in the native fallback while show_header is off", async () => {
+    const editor = await mount({ show_header: false });
+    const inputs = editor.shadowRoot!.querySelectorAll("input");
+    // Checkbox order matches the native render's field list: use_list_color, show_header,
+    // show_add, show_completed, show_progress.
+    const showProgressCheckbox = inputs[5] as HTMLInputElement;
+    expect(showProgressCheckbox.disabled).toBe(true);
+  });
+
+  it("re-enables the show_progress control once show_header is on", async () => {
+    const editor = await mount({ show_header: true });
+    const inputs = editor.shadowRoot!.querySelectorAll("input");
+    const showProgressCheckbox = inputs[5] as HTMLInputElement;
+    expect(showProgressCheckbox.disabled).toBe(false);
   });
 
   it("shows the viewer hint only for a view-only list", async () => {

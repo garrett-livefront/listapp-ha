@@ -7,7 +7,7 @@ describe("resolveConfig", () => {
       entity: "todo.listapp_x",
       title: undefined,
       useListColor: true,
-      showTitle: true,
+      showHeader: true,
       showAdd: true,
       showCompleted: true,
       showProgress: true,
@@ -22,7 +22,7 @@ describe("resolveConfig", () => {
       entity: "todo.a",
       title: "Custom",
       use_list_color: false,
-      show_title: false,
+      show_header: false,
       show_add: false,
       show_completed: false,
       show_progress: false,
@@ -32,7 +32,7 @@ describe("resolveConfig", () => {
     expect(resolved).toMatchObject({
       title: "Custom",
       useListColor: false,
-      showTitle: false,
+      showHeader: false,
       showAdd: false,
       showCompleted: false,
       showProgress: false,
@@ -58,6 +58,12 @@ describe("resolveConfig", () => {
     expect(() =>
       resolveConfig({ type: "x", entity: "todo.a", item_tap_action: "open" as never }),
     ).toThrow(/item_tap_action/);
+  });
+
+  it("rejects the renamed show_title key rather than silently ignoring it", () => {
+    expect(() =>
+      resolveConfig({ type: "x", entity: "todo.a", show_title: false } as never),
+    ).toThrow(/show_header/);
   });
 });
 
