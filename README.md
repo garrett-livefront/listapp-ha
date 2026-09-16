@@ -56,9 +56,9 @@ you both the entities and the card, with nothing else to add and no separate res
   <img src="https://raw.githubusercontent.com/garrett-livefront/listapp-ha/main/docs/images/card-default-dark.png" width="380" alt="Listapp list card, dark theme">
 </p>
 
-To add it: edit a dashboard, **Add card**, and search for "Listapp" in the card picker, which adds
-it with a default entity already set — then edit the YAML to point it at your list and set options
-(no visual editor yet):
+To add it: edit a dashboard, **Add card**, and search for "Listapp" in the card picker — it comes
+with a visual editor, so you can pick the entity and set options without writing YAML. To add it by
+hand instead:
 
 ```yaml
 type: custom:listapp-list-card
@@ -66,6 +66,9 @@ entity: todo.listapp_groceries
 title: Groceries
 item_tap_action: toggle
 ```
+
+The options table below applies to both — whatever you set in the editor is the same YAML shown
+above.
 
 | Option | Default | Description |
 | --- | --- | --- |
