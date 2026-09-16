@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULTS, ListAppListCardEditor, fromFormData, listAppTodoEntities, toFormData } from "../src/editor.js";
 import type { HomeAssistant } from "../src/ha.js";
+import { EDITOR_IMPL_TAG } from "../src/tags.js";
 
 function hassWith(entities: Record<string, { list_id?: string }>): HomeAssistant {
   const states: HomeAssistant["states"] = {};
@@ -89,7 +90,7 @@ function hass(entity = "todo.groceries"): HomeAssistant {
 }
 
 async function mount(config: Record<string, unknown> = {}): Promise<ListAppListCardEditor> {
-  const editor = document.createElement("listapp-list-card-editor") as ListAppListCardEditor;
+  const editor = document.createElement(EDITOR_IMPL_TAG) as ListAppListCardEditor;
   editor.setConfig({ type: "custom:listapp-list-card", entity: "todo.groceries", ...config });
   editor.hass = hass();
   document.body.append(editor);
@@ -111,7 +112,7 @@ describe("ListAppListCardEditor", () => {
         "todo.legacy": { entity_id: "todo.legacy", state: "0", attributes: {} },
       },
     } as unknown as HomeAssistant;
-    const editor = document.createElement("listapp-list-card-editor") as ListAppListCardEditor;
+    const editor = document.createElement(EDITOR_IMPL_TAG) as ListAppListCardEditor;
     editor.setConfig({ type: "custom:listapp-list-card", entity: "todo.legacy" });
     editor.hass = twoEntityHass;
     document.body.append(editor);
@@ -180,7 +181,7 @@ describe("ListAppListCardEditor", () => {
         },
       },
     } as unknown as HomeAssistant;
-    const editor = document.createElement("listapp-list-card-editor") as ListAppListCardEditor;
+    const editor = document.createElement(EDITOR_IMPL_TAG) as ListAppListCardEditor;
     editor.setConfig({ type: "custom:listapp-list-card", entity: "todo.groceries" });
     editor.hass = viewerHass;
     document.body.append(editor);
