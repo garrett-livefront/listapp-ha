@@ -253,6 +253,13 @@ field, no toggling, no menus) regardless of `show_header`, so the text was reinf
 UI already enforces, not the only signal of it. A config that says "hide the header" hides the whole
 header.
 
+**Clear-completed stays reachable.** With `show_completed: false` and completed items present, the
+header exception already moves the Clear-completed menu there (see "Menus and dialogs" above) since
+the Completed section that normally hosts it never renders. `show_header: false` hides the visual
+header but not that action: it renders in its own single-row `.head-clear-only` bar instead, so
+`show_header: false` + `show_completed: false` doesn't leave completed items permanently stuck
+(Copilot review comment on PR #19). `getCardSize()` counts that bar's row when it applies.
+
 ## Editor
 
 `getConfigElement` returns `listapp-list-card-editor` (`src/editor.ts`), mirroring HA's stock

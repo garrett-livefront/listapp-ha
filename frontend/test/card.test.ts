@@ -521,4 +521,31 @@ describe("show_header", () => {
     const withoutHeader = await mount(hass, { show_header: false }, [item("1", "Milk")]);
     expect(withoutHeader.getCardSize()).toBe(withHeader.getCardSize() - 2);
   });
+
+  it("keeps the Clear-completed action reachable when the header is off and completed items are hidden (Copilot review comment on PR #19)", async () => {
+    const card = await mount(hass, { show_header: false, show_completed: false }, [
+      item("a", "Milk"),
+      item("b", "Eggs", true),
+    ]);
+    expect(root(card).querySelector("header.head")).toBeNull();
+    const menuBtn = root(card).querySelector<HTMLElement>('.head-clear-only .menu-btn[data-menu="completed"]');
+    expect(menuBtn).not.toBeNull();
+    menuBtn!.click();
+    await card.updateComplete;
+    expect(root(card).querySelector(".menu")).not.toBeNull();
+  });
+
+  it("does not render the Clear-completed bar with the header off when there's nothing to clear", async () => {
+    const card = await mount(hass, { show_header: false }, [item("1", "Milk")]);
+    expect(root(card).querySelector(".head-clear-only")).toBeNull();
+  });
+
+  it("accounts for the Clear-completed bar's row in getCardSize when the header is off", async () => {
+    const withoutClear = await mount(hass, { show_header: false }, [item("1", "Milk")]);
+    const withClear = await mount(hass, { show_header: false, show_completed: false }, [
+      item("a", "Milk"),
+      item("b", "Eggs", true),
+    ]);
+    expect(withClear.getCardSize()).toBe(withoutClear.getCardSize() + 1);
+  });
 });

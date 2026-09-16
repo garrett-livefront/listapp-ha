@@ -128,8 +128,10 @@ export class ListAppListCard extends LitElement {
     const loading = view.state === "loading";
     // Mirror render()'s conditions: the header block (and its progress bar) is skipped when
     // show_header is off, the progress bar is also skipped when show_progress is off or still
-    // loading, and the add form is skipped while loading — see docs/card.md.
-    const header = view.showHeader ? 1 + (view.showProgress && !loading ? 1 : 0) : 0;
+    // loading, and the add form is skipped while loading — see docs/card.md. A hidden header
+    // still renders a 1-row Clear-completed bar when that action would otherwise be unreachable.
+    const showHiddenClear = !view.showCompleted && view.canDelete && view.completed.length > 0;
+    const header = view.showHeader ? 1 + (view.showProgress && !loading ? 1 : 0) : showHiddenClear ? 1 : 0;
     const add = view.showAdd && !loading ? 1 : 0;
     return header + add + rows + 1;
   }
@@ -422,17 +424,23 @@ export class ListAppListCard extends LitElement {
     `;
   }
 
+  // With completed items hidden (show_completed: false), the Completed section — and its
+  // Clear-completed menu — never renders there. Surface it near the top of the card instead,
+  // where a downward-opening menu has room (Copilot review comment on PR #14).
+  private _showHiddenClear(view: CardView): boolean {
+    return !view.showCompleted && view.canDelete && view.completed.length > 0;
+  }
+
   private _renderHeader(view: CardView, iconKey: string | null | undefined) {
-    // show_header: false hides the whole block — icon tile, title and subline (Garrett decided
-    // 2026-09-15 this also drops the viewer "view only" marker; see docs/card.md#options).
+    // show_header: false hides the icon tile, title and subline (Garrett decided 2026-09-15 this
+    // also drops the viewer "view only" marker; see docs/card.md#options) but the Clear-completed
+    // action stays reachable — it's the only way to clear completed items in that combination
+    // (Copilot review comment on PR #19), so it renders in its own bar instead.
     if (!view.showHeader) {
-      return nothing;
+      return this._showHiddenClear(view)
+        ? html`<div class="head head-clear-only">${this._renderMenu("completed", view, false)}</div>`
+        : nothing;
     }
-    // With completed items hidden (show_completed: false), the Completed section — and its
-    // Clear-completed menu — never renders. Surface it here instead, near the top of the card
-    // where a downward-opening menu has room, rather than inside the all-done tile where
-    // ha-card's `overflow: hidden` could clip it (Copilot review comment on PR #14).
-    const showHiddenClear = !view.showCompleted && view.canDelete && view.completed.length > 0;
     return html`
       <header class="head">
         <div class="tile" aria-hidden="true">${listIcon(iconKey, 20)}</div>
@@ -440,7 +448,7 @@ export class ListAppListCard extends LitElement {
           <h2 class="title">${view.title}</h2>
           <p class="subline">${view.subline}</p>
         </div>
-        ${showHiddenClear ? this._renderMenu("completed", view, false) : nothing}
+        ${this._showHiddenClear(view) ? this._renderMenu("completed", view, false) : nothing}
       </header>
     `;
   }
@@ -1015,6 +1023,9 @@ export class ListAppListCard extends LitElement {
       align-items: center;
       gap: 12px;
       padding: 18px 18px 0;
+    }
+    .head-clear-only {
+      justify-content: flex-end;
     }
     .tile {
       flex: none;
