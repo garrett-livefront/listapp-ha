@@ -5,7 +5,7 @@ export interface ListAppCardConfig {
   entity: string;
   title?: string;
   use_list_color?: boolean;
-  show_title?: boolean;
+  show_header?: boolean;
   show_add?: boolean;
   show_completed?: boolean;
   show_progress?: boolean;
@@ -17,7 +17,7 @@ export interface ResolvedConfig {
   entity: string;
   title: string | undefined;
   useListColor: boolean;
-  showTitle: boolean;
+  showHeader: boolean;
   showAdd: boolean;
   showCompleted: boolean;
   showProgress: boolean;
@@ -33,6 +33,10 @@ const bool = (value: unknown, fallback: boolean): boolean =>
 export function resolveConfig(config: ListAppCardConfig): ResolvedConfig {
   if (!config || typeof config !== "object") {
     throw new Error("Invalid configuration");
+  }
+  // The card is unreleased; show_title was renamed to show_header rather than kept as an alias.
+  if ("show_title" in config) {
+    throw new Error("show_title was renamed to show_header");
   }
   if (typeof config.entity !== "string" || !/^todo\.[a-z0-9_]+$/.test(config.entity)) {
     throw new Error("Specify an entity from within the todo domain");
@@ -52,7 +56,7 @@ export function resolveConfig(config: ListAppCardConfig): ResolvedConfig {
     entity: config.entity,
     title: typeof config.title === "string" && config.title.trim() ? config.title : undefined,
     useListColor: bool(config.use_list_color, true),
-    showTitle: bool(config.show_title, true),
+    showHeader: bool(config.show_header, true),
     showAdd: bool(config.show_add, true),
     showCompleted: bool(config.show_completed, true),
     showProgress: bool(config.show_progress, true),

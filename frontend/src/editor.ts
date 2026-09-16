@@ -9,7 +9,7 @@ export const EDITOR_TAG = "listapp-list-card-editor";
 
 export const DEFAULTS = {
   use_list_color: true,
-  show_title: true,
+  show_header: true,
   show_add: true,
   show_completed: true,
   show_progress: true,
@@ -21,7 +21,7 @@ export interface FormData {
   entity: string;
   title: string;
   use_list_color: boolean;
-  show_title: boolean;
+  show_header: boolean;
   show_add: boolean;
   show_completed: boolean;
   show_progress: boolean;
@@ -45,7 +45,7 @@ export function toFormData(config: ListAppCardConfig): FormData {
     entity: config.entity ?? "",
     title: config.title ?? "",
     use_list_color: config.use_list_color ?? DEFAULTS.use_list_color,
-    show_title: config.show_title ?? DEFAULTS.show_title,
+    show_header: config.show_header ?? DEFAULTS.show_header,
     show_add: config.show_add ?? DEFAULTS.show_add,
     show_completed: config.show_completed ?? DEFAULTS.show_completed,
     show_progress: config.show_progress ?? DEFAULTS.show_progress,
@@ -62,7 +62,7 @@ export function fromFormData(data: FormData, type: string): ListAppCardConfig {
     config.title = title;
   }
   if (data.use_list_color !== DEFAULTS.use_list_color) config.use_list_color = data.use_list_color;
-  if (data.show_title !== DEFAULTS.show_title) config.show_title = data.show_title;
+  if (data.show_header !== DEFAULTS.show_header) config.show_header = data.show_header;
   if (data.show_add !== DEFAULTS.show_add) config.show_add = data.show_add;
   if (data.show_completed !== DEFAULTS.show_completed) config.show_completed = data.show_completed;
   if (data.show_progress !== DEFAULTS.show_progress) config.show_progress = data.show_progress;
@@ -76,15 +76,16 @@ export function fromFormData(data: FormData, type: string): ListAppCardConfig {
   return config;
 }
 
-function schema(entityIds: string[]) {
+function schema(entityIds: string[], headerOn: boolean) {
   return [
     { name: "entity", required: true, selector: { entity: { include_entities: entityIds } } },
     { name: "title", selector: { text: {} } },
     { name: "use_list_color", selector: { boolean: {} } },
-    { name: "show_title", selector: { boolean: {} } },
+    { name: "show_header", selector: { boolean: {} } },
     { name: "show_add", selector: { boolean: {} } },
     { name: "show_completed", selector: { boolean: {} } },
-    { name: "show_progress", selector: { boolean: {} } },
+    // Forced off with the header — see docs/card.md#options.
+    { name: "show_progress", selector: { boolean: {} }, disabled: !headerOn },
     { name: "collapse_to", selector: { number: { min: 0, mode: "box" } } },
     { name: "item_tap_action", selector: { select: { mode: "dropdown", options: TAP_ACTION_OPTIONS } } },
   ];
@@ -94,7 +95,7 @@ const LABELS: Record<string, string> = {
   entity: "List",
   title: "Title override",
   use_list_color: "Use list colour",
-  show_title: "Show header",
+  show_header: "Show header",
   show_add: "Show add field",
   show_completed: "Show completed",
   show_progress: "Show progress bar",
@@ -150,7 +151,7 @@ export class ListAppListCardEditor extends LitElement {
       <ha-form
         .hass=${this.hass}
         .data=${data}
-        .schema=${schema(this._entityIds())}
+        .schema=${schema(this._entityIds(), data.show_header)}
         .computeLabel=${(s: { name: string }) => LABELS[s.name] ?? s.name}
         @value-changed=${this._haFormChanged}
       ></ha-form>
@@ -181,7 +182,7 @@ export class ListAppListCardEditor extends LitElement {
         ${(
           [
             "use_list_color",
-            "show_title",
+            "show_header",
             "show_add",
             "show_completed",
             "show_progress",
@@ -190,7 +191,12 @@ export class ListAppListCardEditor extends LitElement {
           (key) => html`
             <label class="field row">
               <span>${LABELS[key]}</span>
-              <input type="checkbox" .checked=${data[key]} @change=${this._nativeChanged(key)} />
+              <input
+                type="checkbox"
+                .checked=${data[key]}
+                ?disabled=${key === "show_progress" && !data.show_header}
+                @change=${this._nativeChanged(key)}
+              />
             </label>
           `,
         )}
