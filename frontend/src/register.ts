@@ -9,7 +9,8 @@ const WARNING =
   "page is reloaded; see " +
   "https://github.com/garrett-livefront/listapp-ha/blob/main/docs/card.md#registry-patching";
 
-// The total time the retry chain can span, so a late-defining tag has a bounded wait to hang on.
+// How long a host waits for its implementation tag. Independent of, and deliberately longer than,
+// the retry chain itself (~600 ms): the chunk's chain may start well after the host began waiting.
 export const REGISTRATION_TIMEOUT_MS = 2000;
 
 let warned = false;

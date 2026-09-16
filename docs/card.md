@@ -244,9 +244,12 @@ The same guard covers the **implementation** tags. `listapp-list-card-impl` and
 ran, so a wrapper still swallowing calls at that moment would leave the host mounting an
 `HTMLUnknownElement` and calling `setConfig` on it — the guarded entry would report success and the
 card would still break. `src/register.ts` holds the shared retry, and all four defines go through
-it. The host also waits for its implementation tag (`whenDefined`, bounded by the retry chain's own
-2 s) before mounting, so a define that only takes on the third attempt still yields a working card
-rather than a dead one; past the bound it shows the same readable notice as a failed chunk load.
+it. The host also waits for its implementation tag (`whenDefined`) before mounting, so a define that
+only takes on the third attempt still yields a working card rather than a dead one; past the wait it
+shows the same readable notice as a failed chunk load. That wait is 2 s, which is not the retry
+chain's own span: five attempts at a microtask then 0, 100 and 500 ms exhaust in roughly 600 ms. The
+two are deliberately independent, because the chunk's chain only starts once the chunk has been
+fetched and evaluated, which can be well after the host started waiting.
 The warning is module state, so each bundle warns at most once however many tags were swallowed.
 *(Both were Copilot review comments on PR #27.)*
 
