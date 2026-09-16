@@ -43,6 +43,7 @@ export interface CardView {
   completed: TodoItem[];
   visibleActive: TodoItem[];
   hiddenActive: number;
+  showHeader: boolean;
   showAdd: boolean;
   showCompleted: boolean;
   showProgress: boolean;
@@ -180,9 +181,11 @@ export function deriveView({ config, stateObj, items, availability, expanded }: 
     completed,
     visibleActive: shown,
     hiddenActive: hidden,
+    showHeader: config.showHeader,
     showAdd: config.showAdd && canCreate,
     showCompleted: config.showCompleted,
-    showProgress: config.showProgress,
+    // Hiding the header hides the progress bar underneath it too — see docs/card.md#options.
+    showProgress: config.showProgress && config.showHeader,
   };
 }
 
