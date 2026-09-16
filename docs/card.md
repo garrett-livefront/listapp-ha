@@ -84,14 +84,18 @@ One accepted limitation: HA only sets a domain's component up when it has at lea
 zero entries doesn't register the card. There's nothing to show at that point, and adding the first
 entry sets the component up, `async_setup` first.
 
-- `custom_components/listapp/frontend/listapp-list-card.js` is served at
-  `/listapp_frontend/listapp-list-card.js` via `hass.http.async_register_static_paths`
-  (`StaticPathConfig`), the same mechanism popular custom card integrations (and HA core) use to
-  serve a bundled file without a separate static file server.
+- The whole `custom_components/listapp/frontend/` directory is served under `/listapp_frontend/` via
+  `hass.http.async_register_static_paths` (`StaticPathConfig`), the same mechanism popular custom
+  card integrations (and HA core) use to serve bundled files without a separate static file server.
+  The directory, not the single entry file, is registered because the entry dynamically imports its
+  sibling `listapp-list-card-impl.js`, which has to be reachable at the same base URL — see
+  [Fast registration](#fast-registration).
 - `homeassistant.components.frontend.add_extra_js_url` registers it as a global frontend resource,
   so every dashboard loads it automatically — the user never adds a Lovelace resource by hand.
 - The URL carries `?v=<content hash>` for cache busting, computed once at registration from the
-  bundle file's own bytes (`hashlib.sha256(...).hexdigest()[:12]`), not the integration version.
+  bytes of **every** `*.js` in the frontend directory (`hashlib.sha256(...).hexdigest()[:12]`), not
+  the integration version — so a change confined to the implementation chunk still busts the entry's
+  cached URL. See [Cache busting across two files](#cache-busting).
   `manifest.json` doesn't move on every slice that touches the card, but a version-keyed URL only
   invalidates the browser cache when it does — an installation that cached an earlier bundle at
   `?v=0.1.0` would keep serving it across an upgrade that changes the JS without a version bump.
@@ -191,11 +195,14 @@ chunk has to be reachable at the same base URL.
 ## Architecture
 
 Source lives in `frontend/` at the repo root (Lit 3 + TypeScript, bundled by esbuild). The build
-output is **committed** at `custom_components/listapp/frontend/listapp-list-card.js` because HACS
-installs straight from the git repository — there is nowhere for a bundler to run on the user's
-instance. It builds to two dependency-free ES modules: a 3.2 KB entry that registers the tags, and a
-~73 KB (~20 KB gzipped, of which Lit is roughly two thirds) implementation chunk the entry imports
-dynamically — see [Fast registration](#fast-registration) for why the split exists.
+output is **committed** because HACS installs straight from the git repository — there is nowhere
+for a bundler to run on the user's instance. It builds to two dependency-free ES modules, and
+**both** are committed and shipped:
+`custom_components/listapp/frontend/listapp-list-card.js` (a ~3.3 KB entry that registers the tags)
+and `custom_components/listapp/frontend/listapp-list-card-impl.js` (a ~73 KB, ~20 KB gzipped — of
+which Lit is roughly two thirds — implementation chunk the entry imports dynamically). Shipping the
+entry without its sibling would leave the lazy import 404ing at runtime, so `check:fresh` guards
+both files; see [Fast registration](#fast-registration) for why the split exists.
 
 | Module | Role |
 | --- | --- |
