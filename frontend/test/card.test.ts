@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ListAppListCard } from "../src/listapp-list-card.js";
 import { TodoItemStatus, type HomeAssistant, type TodoItem } from "../src/ha.js";
+import { STRINGS as S } from "../src/strings.js";
 
 const ENTITY = "todo.listapp_test";
 const WRITE = 1 | 2 | 4 | 8;
@@ -82,12 +83,21 @@ function calls(hass: FakeHass, service: string) {
   return hass.callService.mock.calls.filter(([, name]) => name === service);
 }
 
-async function openConfirmClear(card: ListAppListCard) {
-  root(card).querySelector<HTMLElement>('.menu-btn[data-menu="completed"]')!.click();
+async function openConfirmClear(card: ListAppListCard, menu: "completed" | "active" = "completed") {
+  root(card).querySelector<HTMLElement>(`.menu-btn[data-menu="${menu}"]`)!.click();
   await card.updateComplete;
   root(card).querySelector<HTMLElement>(".menu button.danger")!.click();
   await card.updateComplete;
   return root(card).querySelector<HTMLButtonElement>("dialog .danger-bg")!;
+}
+
+async function openConfirmUncheck(card: ListAppListCard, menu: "completed" | "active" = "completed") {
+  root(card).querySelector<HTMLElement>(`.menu-btn[data-menu="${menu}"]`)!.click();
+  await card.updateComplete;
+  const buttons = Array.from(root(card).querySelectorAll<HTMLButtonElement>(".menu button"));
+  buttons.find((b) => b.textContent?.trim() === S.uncheckAll)!.click();
+  await card.updateComplete;
+  return root(card).querySelector<HTMLButtonElement>("dialog .primary:not(.danger-bg)")!;
 }
 
 let hass: FakeHass;
@@ -364,6 +374,76 @@ describe("in-flight guards", () => {
   });
 });
 
+describe("uncheck all", () => {
+  it("marks every completed item needs_action", async () => {
+    const card = await mount(hass, {}, [item("a", "Milk"), item("b", "Eggs", true), item("c", "Jam", true)]);
+    const button = await openConfirmUncheck(card);
+    button.click();
+    await flush();
+    await card.updateComplete;
+    expect(calls(hass, "update_item").map((c) => c[2])).toEqual([
+      { item: "b", status: TodoItemStatus.NeedsAction },
+      { item: "c", status: TodoItemStatus.NeedsAction },
+    ]);
+  });
+
+  it("shows the completed count in the confirm dialog", async () => {
+    const card = await mount(hass, {}, [item("a", "Milk", true), item("b", "Eggs", true)]);
+    root(card).querySelector<HTMLElement>('.menu-btn[data-menu="completed"]')!.click();
+    await card.updateComplete;
+    const buttons = Array.from(root(card).querySelectorAll<HTMLButtonElement>(".menu button"));
+    buttons.find((b) => b.textContent?.trim() === S.uncheckAll)!.click();
+    await card.updateComplete;
+    expect(root(card).querySelector("dialog p")!.textContent).toContain("2");
+  });
+
+  it("fires one batch of update_item calls for a double click", async () => {
+    const pending = deferred();
+    hass.callService.mockReturnValueOnce(pending.promise).mockReturnValueOnce(pending.promise);
+    const card = await mount(hass, {}, [item("a", "Milk"), item("b", "Eggs", true), item("c", "Jam", true)]);
+    const button = await openConfirmUncheck(card);
+    button.click();
+    button.click();
+    await card.updateComplete;
+    expect(calls(hass, "update_item")).toHaveLength(2);
+    expect(button.disabled).toBe(true);
+    pending.resolve();
+    await flush();
+    await card.updateComplete;
+    expect(root(card).querySelector("dialog")).toBeNull();
+  });
+
+  it("does not re-send an item unchecked while the dialog was open", async () => {
+    const card = await mount(hass, {}, [item("a", "Milk"), item("b", "Eggs", true), item("c", "Jam", true)]);
+    const button = await openConfirmUncheck(card);
+    hass.push(ENTITY, [item("a", "Milk"), item("b", "Eggs"), item("c", "Jam", true)]);
+    await card.updateComplete;
+    button.click();
+    await flush();
+    expect(calls(hass, "update_item").map((c) => c[2])).toEqual([{ item: "c", status: TodoItemStatus.NeedsAction }]);
+  });
+
+  it("rolls back a failed uncheck", async () => {
+    hass.callService.mockRejectedValueOnce(new Error("offline"));
+    const card = await mount(hass, {}, [item("a", "Milk"), item("b", "Eggs", true)]);
+    const button = await openConfirmUncheck(card);
+    button.click();
+    await flush();
+    await card.updateComplete;
+    expect(root(card).querySelector<HTMLInputElement>('input[data-uid="b"]')!.checked).toBe(true);
+  });
+
+  it("an editor without delete permission sees Uncheck all but not Clear completed", async () => {
+    hass.setEntity(ENTITY, "2", 1 | 4 | 8);
+    const card = await mount(hass, {}, [item("a", "Milk"), item("b", "Eggs", true)]);
+    root(card).querySelector<HTMLElement>('.menu-btn[data-menu="completed"]')!.click();
+    await card.updateComplete;
+    const labels = Array.from(root(card).querySelectorAll(".menu button")).map((b) => b.textContent?.trim());
+    expect(labels).toContain(S.uncheckAll);
+    expect(labels.some((l) => l?.includes(S.clearCompleted))).toBe(false);
+  });
+});
+
 describe("menus and dialogs", () => {
   it("opens the Completed section's menu upward so ha-card's overflow can't clip it", async () => {
     const card = await mount(hass, {}, [item("a", "Milk"), item("b", "Eggs", true)]);
@@ -372,9 +452,9 @@ describe("menus and dialogs", () => {
     expect(root(card).querySelector(".menu")!.classList.contains("up")).toBe(true);
   });
 
-  it("opens the header Clear-completed menu downward", async () => {
+  it("opens the consolidated Active menu downward when Completed isn't rendered", async () => {
     const card = await mount(hass, { show_completed: false }, [item("a", "Milk"), item("b", "Eggs", true)]);
-    root(card).querySelector<HTMLElement>('header .menu-btn[data-menu="completed"]')!.click();
+    root(card).querySelector<HTMLElement>('.menu-btn[data-menu="active"]')!.click();
     await card.updateComplete;
     expect(root(card).querySelector(".menu")!.classList.contains("up")).toBe(false);
   });
@@ -522,30 +602,35 @@ describe("show_header", () => {
     expect(withoutHeader.getCardSize()).toBe(withHeader.getCardSize() - 2);
   });
 
-  it("keeps the Clear-completed action reachable when the header is off and completed items are hidden (Copilot review comment on PR #19)", async () => {
+  it("keeps Clear completed and Uncheck all reachable via the Active menu with the header off and completed hidden", async () => {
     const card = await mount(hass, { show_header: false, show_completed: false }, [
       item("a", "Milk"),
       item("b", "Eggs", true),
     ]);
     expect(root(card).querySelector("header.head")).toBeNull();
-    const menuBtn = root(card).querySelector<HTMLElement>('.head-clear-only .menu-btn[data-menu="completed"]');
+    const menuBtn = root(card).querySelector<HTMLElement>('.menu-btn[data-menu="active"]');
     expect(menuBtn).not.toBeNull();
     menuBtn!.click();
     await card.updateComplete;
-    expect(root(card).querySelector(".menu")).not.toBeNull();
+    const labels = Array.from(root(card).querySelectorAll(".menu button")).map((b) => b.textContent?.trim());
+    expect(labels).toContain(S.uncheckAll);
+    expect(labels.some((l) => l?.includes(S.clearCompleted))).toBe(true);
   });
 
-  it("does not render the Clear-completed bar with the header off when there's nothing to clear", async () => {
-    const card = await mount(hass, { show_header: false }, [item("1", "Milk")]);
-    expect(root(card).querySelector(".head-clear-only")).toBeNull();
+  it("adds no extra row for the consolidated menu now that it lives in the Active section's own header", async () => {
+    const withoutCompleted = await mount(hass, { show_completed: false }, [item("1", "Milk")]);
+    const withCompleted = await mount(hass, { show_completed: false }, [item("a", "Milk"), item("b", "Eggs", true)]);
+    expect(withCompleted.getCardSize()).toBe(withoutCompleted.getCardSize());
   });
 
-  it("accounts for the Clear-completed bar's row in getCardSize when the header is off", async () => {
-    const withoutClear = await mount(hass, { show_header: false }, [item("1", "Milk")]);
-    const withClear = await mount(hass, { show_header: false, show_completed: false }, [
-      item("a", "Milk"),
-      item("b", "Eggs", true),
-    ]);
-    expect(withClear.getCardSize()).toBe(withoutClear.getCardSize() + 1);
+  it("counts the all-done state's menu-only row when Completed is hidden with items to act on", async () => {
+    const config = { show_completed: false, show_add: false };
+    const owner = await mount(hass, config, [item("a", "Milk", true), item("b", "Eggs", true)]);
+    const ownerSize = owner.getCardSize();
+    const viewerHass = new FakeHass();
+    viewerHass.setEntity(ENTITY, "2", 0);
+    viewerHass.states[ENTITY]!.attributes.role = "viewer";
+    const viewer = await mount(viewerHass, config, [item("a", "Milk", true), item("b", "Eggs", true)]);
+    expect(ownerSize).toBe(viewer.getCardSize() + 1);
   });
 });
