@@ -70,10 +70,6 @@ async def async_setup_entry(
         if registry_entry.domain == TODO_DOMAIN
     }
 
-    # H3 moved from one account-level device to one device per list; clean up the orphan.
-    if legacy_device := _get_device(devices, entry.entry_id, (DOMAIN, coordinator.account_id)):
-        devices.async_remove_device(legacy_device.id)
-
     @callback
     def sync_entities() -> None:
         current = set(coordinator.data)
@@ -100,6 +96,13 @@ async def async_setup_entry(
                 devices.async_remove_device(device.id)
 
     sync_entities()
+
+    # H3 moved from one account-level device to one device per list. sync_entities() above
+    # already re-registered existing entities against their new per-list device, so removing
+    # this now-orphaned device won't cascade-delete entity_ids that need to survive.
+    if legacy_device := _get_device(devices, entry.entry_id, (DOMAIN, coordinator.account_id)):
+        devices.async_remove_device(legacy_device.id)
+
     entry.async_on_unload(coordinator.async_add_listener(sync_entities))
 
 

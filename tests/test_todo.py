@@ -460,11 +460,20 @@ async def test_legacy_account_device_is_removed(
 ) -> None:
     config_entry.add_to_hass(hass)
     device_registry = dr.async_get(hass)
+    entity_registry = er.async_get(hass)
     legacy = device_registry.async_get_or_create(
         config_entry_id=config_entry.entry_id,
         identifiers={(DOMAIN, ACCOUNT_ID)},
         name="ListApp",
         manufacturer="ListApp",
+    )
+    legacy_entry = entity_registry.async_get_or_create(
+        TODO_DOMAIN,
+        DOMAIN,
+        f"{ACCOUNT_ID}_{GROCERIES_ID}",
+        suggested_object_id=f"listapp_{GROCERIES_ID}",
+        config_entry=config_entry,
+        device_id=legacy.id,
     )
     register_lists(aioclient_mock, [groceries()])
 
@@ -473,6 +482,14 @@ async def test_legacy_account_device_is_removed(
 
     assert device_registry.async_get(legacy.id) is None
     assert list_device(hass, config_entry.entry_id, GROCERIES_ID) is not None
+    # The pre-existing entity_id must survive the legacy-device teardown: entities are
+    # re-registered against the new per-list device before that device is removed, so the
+    # device-removal cascade never touches them. See docs/architecture.md#entities.
+    assert entity_registry.async_get(legacy_entry.entity_id) is not None
+    assert (
+        entity_registry.async_get_entity_id(TODO_DOMAIN, DOMAIN, f"{ACCOUNT_ID}_{GROCERIES_ID}")
+        == legacy_entry.entity_id
+    )
 
 
 async def test_list_gone_between_requests_is_skipped(
