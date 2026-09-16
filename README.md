@@ -46,6 +46,64 @@ The first time you sign in (or click a My Home Assistant button), my.home-assist
 your Home Assistant URL and remembers it in that browser — use one reachable from the browser
 you're signing in with.
 
+## Dashboard card
+
+A branded "Listapp list" card ships **inside** the integration — installing ListApp from HACS gives
+you both the entities and the card, with nothing else to add and no separate resource to register.
+
+<p>
+  <img src="https://raw.githubusercontent.com/garrett-livefront/listapp-ha/main/docs/images/card-default-light.png" width="380" alt="Listapp list card, light theme">
+  <img src="https://raw.githubusercontent.com/garrett-livefront/listapp-ha/main/docs/images/card-default-dark.png" width="380" alt="Listapp list card, dark theme">
+</p>
+
+To add it: edit a dashboard, **Add card**, and search for "Listapp" in the card picker — it comes
+with a visual editor, so you can pick the entity and set options without writing YAML. To add it by
+hand instead:
+
+```yaml
+type: custom:listapp-list-card
+entity: todo.listapp_groceries
+title: Groceries
+item_tap_action: toggle
+```
+
+The options table below applies to both — whatever you set in the editor is the same YAML shown
+above.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `entity` | *(required)* | The `todo.<entity_id>` entity to show — the default id is `todo.listapp_<list>`, but a renamed entity id works too. |
+| `title` | entity's friendly name | Overrides the card's title. |
+| `use_list_color` | `true` | `false` uses your theme's primary color as the accent instead of the list's own color. |
+| `show_title` | `true` | `false` hides the title text; the icon and item count stay. |
+| `show_add` | `true` | Shows the add-item field. Always hidden if you only have viewer access. |
+| `show_completed` | `true` | Shows the Completed section. |
+| `show_progress` | `true` | Shows the progress bar under the header. |
+| `collapse_to` | `0` (off) | Shows only this many active items, with a "Show N more" link for the rest. |
+| `item_tap_action` | `toggle` | `toggle` checks/unchecks an item on tap; `edit` opens rename/delete instead. The checkbox itself always toggles. |
+
+Each list keeps its own colour and icon by default (`use_list_color: false` switches to your theme's
+accent instead), and `collapse_to` truncates a long list behind a "Show N more" link:
+
+<p>
+  <img src="https://raw.githubusercontent.com/garrett-livefront/listapp-ha/main/docs/images/card-colored-icon-light.png" width="380" alt="Listapp list card, list colour and icon">
+  <img src="https://raw.githubusercontent.com/garrett-livefront/listapp-ha/main/docs/images/card-collapse-light.png" width="380" alt="Listapp list card, collapsed with collapse_to set">
+</p>
+
+Lists you only have viewer access to show read-only — no add field, no menus, no checking items off.
+
+<p>
+  <img src="https://raw.githubusercontent.com/garrett-livefront/listapp-ha/main/docs/images/card-viewer-light.png" width="380" alt="Listapp list card, viewer-only access">
+  <img src="https://raw.githubusercontent.com/garrett-livefront/listapp-ha/main/docs/images/card-empty-light.png" width="380" alt="Listapp list card, empty list">
+</p>
+
+If the integration needs you to sign in again, the card shows that directly with a **Sign in**
+button instead of the list:
+
+<p>
+  <img src="https://raw.githubusercontent.com/garrett-livefront/listapp-ha/main/docs/images/card-unavailable-reauth-dark.png" width="380" alt="Listapp list card, needs reauthentication">
+</p>
+
 ## What data is shared
 
 Signing in grants this integration OAuth scopes to read and write your ListApp lists
