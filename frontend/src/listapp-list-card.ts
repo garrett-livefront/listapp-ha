@@ -40,7 +40,10 @@ const AVAILABILITY_RECHECK_MS = 30_000;
 const SUBSCRIBE_RETRY_BASE_MS = 2_000;
 const SUBSCRIBE_RETRY_MAX_MS = 30_000;
 
-type Dialog = { kind: "edit"; item: TodoItem } | { kind: "confirm-clear"; uids: string[] };
+type Dialog =
+  | { kind: "edit"; item: TodoItem }
+  | { kind: "confirm-clear"; uids: string[] }
+  | { kind: "confirm-uncheck"; uids: string[] };
 type Menu = "active" | "completed";
 
 export class ListAppListCard extends LitElement {
@@ -128,12 +131,12 @@ export class ListAppListCard extends LitElement {
     const loading = view.state === "loading";
     // Mirror render()'s conditions: the header block (and its progress bar) is skipped when
     // show_header is off, the progress bar is also skipped when show_progress is off or still
-    // loading, and the add form is skipped while loading — see docs/card.md. A hidden header
-    // still renders a 1-row Clear-completed bar when that action would otherwise be unreachable.
-    const showHiddenClear = !view.showCompleted && view.canDelete && view.completed.length > 0;
-    const header = view.showHeader ? 1 + (view.showProgress && !loading ? 1 : 0) : showHiddenClear ? 1 : 0;
+    // loading, and the add form is skipped while loading — see docs/card.md. The all-done state
+    // adds its own menu-only row when the Completed section isn't rendered but has items to act on.
+    const consolidatedRow = view.state === "all_done" && this._consolidateCompleted(view) ? 1 : 0;
+    const header = view.showHeader ? 1 + (view.showProgress && !loading ? 1 : 0) : 0;
     const add = view.showAdd && !loading ? 1 : 0;
-    return header + add + rows + 1;
+    return header + add + rows + consolidatedRow + 1;
   }
 
   getGridOptions() {
@@ -424,22 +427,24 @@ export class ListAppListCard extends LitElement {
     `;
   }
 
-  // With completed items hidden (show_completed: false), the Completed section — and its
-  // Clear-completed menu — never renders there. Surface it near the top of the card instead,
-  // where a downward-opening menu has room (Copilot review comment on PR #14).
-  private _showHiddenClear(view: CardView): boolean {
-    return !view.showCompleted && view.canDelete && view.completed.length > 0;
+  // The Completed section (and its menu) doesn't render when show_completed is off, while
+  // reordering, or once every completed item is dealt with — see docs/card.md#options.
+  private _completedRendered(view: CardView): boolean {
+    return view.showCompleted && view.completed.length > 0 && !this._reordering;
+  }
+
+  // When the Completed section isn't rendered, its bulk actions move into the Active menu instead
+  // of a separate header bar — one rule covers show_completed:false, show_header:false and both
+  // together — see docs/card.md#options.
+  private _consolidateCompleted(view: CardView): boolean {
+    return !this._completedRendered(view) && view.completed.length > 0 && (view.canDelete || view.canUpdate);
   }
 
   private _renderHeader(view: CardView, iconKey: string | null | undefined) {
     // show_header: false hides the icon tile, title and subline (Garrett decided 2026-09-15 this
-    // also drops the viewer "view only" marker; see docs/card.md#options) but the Clear-completed
-    // action stays reachable — it's the only way to clear completed items in that combination
-    // (Copilot review comment on PR #19), so it renders in its own bar instead.
+    // also drops the viewer "view only" marker) — see docs/card.md#options.
     if (!view.showHeader) {
-      return this._showHiddenClear(view)
-        ? html`<div class="head head-clear-only">${this._renderMenu("completed", view, false)}</div>`
-        : nothing;
+      return nothing;
     }
     return html`
       <header class="head">
@@ -448,7 +453,6 @@ export class ListAppListCard extends LitElement {
           <h2 class="title">${view.title}</h2>
           <p class="subline">${view.subline}</p>
         </div>
-        ${this._showHiddenClear(view) ? this._renderMenu("completed", view, false) : nothing}
       </header>
     `;
   }
@@ -518,9 +522,14 @@ export class ListAppListCard extends LitElement {
       `;
     }
     const activeLabel = this._reordering ? S.reorder : S.active;
+    const consolidate = this._consolidateCompleted(view);
+    const showActiveMenu = (view.canMove && view.active.length > 0) || consolidate;
     return html`
       ${view.state === "all_done"
         ? html`
+            ${showActiveMenu
+              ? html`<div class="section-head menu-only">${this._renderMenu("active", view, false, consolidate)}</div>`
+              : nothing}
             <div class="state all-done">
               <div class="state-icon done">${uiIcon("check", 24)}</div>
               <h3>${S.allDoneTitle}</h3>
@@ -531,7 +540,7 @@ export class ListAppListCard extends LitElement {
             <section class="section" aria-label=${S.active}>
               <div class="section-head">
                 <h3>${activeLabel}<span class="count"> · ${view.active.length}</span></h3>
-                ${view.canMove ? this._renderMenu("active", view, false) : nothing}
+                ${showActiveMenu ? this._renderMenu("active", view, false, consolidate) : nothing}
               </div>
               ${this._renderItems(view.visibleActive, view, true)}
               ${!this._reordering &&
@@ -545,13 +554,13 @@ export class ListAppListCard extends LitElement {
                 : nothing}
             </section>
           `}
-      ${view.showCompleted && view.completed.length && !this._reordering
+      ${this._completedRendered(view)
         ? html`
             <div class="divider" role="separator"></div>
             <section class="section completed" aria-label=${S.completed}>
               <div class="section-head">
                 <h3>${S.completed}<span class="count"> · ${view.completed.length}</span></h3>
-                ${view.canDelete ? this._renderMenu("completed", view, true) : nothing}
+                ${view.canDelete || view.canUpdate ? this._renderMenu("completed", view, true, false) : nothing}
               </div>
               ${this._renderItems(view.completed, view, false)}
             </section>
@@ -560,10 +569,13 @@ export class ListAppListCard extends LitElement {
     `;
   }
 
-  // `up` opens the menu above its button — see docs/card.md#menu-direction
-  private _renderMenu(menu: Menu, view: CardView, up: boolean) {
+  // `up` opens the menu above its button — see docs/card.md#menu-direction. `consolidated` folds
+  // Uncheck all/Clear completed into the Active menu — see docs/card.md#options.
+  private _renderMenu(menu: Menu, view: CardView, up: boolean, consolidated: boolean) {
     const open = this._menu === menu;
     const label = menu === "active" ? S.active : S.completed;
+    const showReorder = menu === "active" && view.canMove && view.active.length > 0;
+    const showBulk = menu === "active" ? consolidated : true;
     return html`
       <div class="menu-wrap" @keydown=${this._menuKeydown}>
         <button
@@ -580,13 +592,19 @@ export class ListAppListCard extends LitElement {
         ${open
           ? html`
               <div class=${classMap({ menu: true, up })} role="menu">
-                ${menu === "active"
+                ${showReorder
                   ? html`<button role="menuitem" @click=${this._toggleReorder}>
                       ${this._reordering ? S.exitReorder : S.reorder}
                     </button>`
-                  : html`<button role="menuitem" class="danger" @click=${() => this._confirmClear(view)}>
+                  : nothing}
+                ${showBulk && view.canUpdate && view.completed.length > 0
+                  ? html`<button role="menuitem" @click=${() => this._confirmUncheckAll(view)}>${S.uncheckAll}</button>`
+                  : nothing}
+                ${showBulk && view.canDelete && view.completed.length > 0
+                  ? html`<button role="menuitem" class="danger" @click=${() => this._confirmClear(view)}>
                       ${uiIcon("trash", 18)} ${S.clearCompleted}
-                    </button>`}
+                    </button>`
+                  : nothing}
               </div>
             `
           : nothing}
@@ -687,6 +705,21 @@ export class ListAppListCard extends LitElement {
               <button type="submit" class="primary" .disabled=${this._pending}>${S.save}</button>
             </div>
           </form>
+        </dialog>
+      `;
+    }
+    if (dialog.kind === "confirm-uncheck") {
+      return html`
+        <dialog class="dialog" @close=${this._closeDialog} @cancel=${this._closeDialog}>
+          <h3>${S.uncheckConfirmTitle}</h3>
+          <p>${S.uncheckConfirmText(dialog.uids.length)}</p>
+          <div class="actions">
+            <span class="spacer"></span>
+            <button type="button" class="text" @click=${this._closeDialog}>${S.cancel}</button>
+            <button type="button" class="primary" .disabled=${this._pending} @click=${this._uncheckAll}>
+              ${S.uncheckAll}
+            </button>
+          </div>
         </dialog>
       `;
     }
@@ -838,6 +871,47 @@ export class ListAppListCard extends LitElement {
       if (!(await this._guarded(() => deleteItems(hass, config.entity, uids)))) {
         return;
       }
+    }
+    this._closeDialog();
+  };
+
+  private _confirmUncheckAll(view: CardView): void {
+    this._menu = null;
+    this._dialog = { kind: "confirm-uncheck", uids: view.completed.map((item) => item.uid) };
+  }
+
+  // Parallel, not sequential: each uid is an independent update_item call, so a long completed
+  // list waits on one round-trip, not N in series — see docs/card.md#uncheck-all.
+  private _uncheckAll = async () => {
+    const dialog = this._dialog;
+    if (this._pending || dialog?.kind !== "confirm-uncheck" || !this.hass || !this._config) {
+      return;
+    }
+    // Re-check against the live list: an item unchecked since the dialog opened must survive.
+    const targets = dialog.uids
+      .map((uid) => this._item(uid))
+      .filter((item): item is TodoItem => item?.status === TodoItemStatus.Completed);
+    if (targets.length === 0) {
+      this._closeDialog();
+      return;
+    }
+    const { hass, _config: config } = this;
+    const uids = new Set(targets.map((item) => item.uid));
+    const version = this._itemsVersion;
+    this._items = this._items?.map((it) => (uids.has(it.uid) ? { ...it, status: TodoItemStatus.NeedsAction } : it));
+    this._pending = true;
+    try {
+      const results = await Promise.all(
+        targets.map((item) => this._call(() => setItemStatus(hass, config.entity, item, TodoItemStatus.NeedsAction))),
+      );
+      if (this._itemsVersion === version && this._config === config) {
+        const failed = new Set(targets.filter((_, i) => !results[i]).map((item) => item.uid));
+        if (failed.size) {
+          this._items = this._items?.map((it) => (failed.has(it.uid) ? { ...it, status: TodoItemStatus.Completed } : it));
+        }
+      }
+    } finally {
+      this._pending = false;
     }
     this._closeDialog();
   };
@@ -1024,9 +1098,6 @@ export class ListAppListCard extends LitElement {
       gap: 12px;
       padding: 18px 18px 0;
     }
-    .head-clear-only {
-      justify-content: flex-end;
-    }
     .tile {
       flex: none;
       width: 38px;
@@ -1125,6 +1196,10 @@ export class ListAppListCard extends LitElement {
     }
     .completed .section-head {
       padding: 14px 16px 4px;
+    }
+    .section-head.menu-only {
+      justify-content: flex-end;
+      padding: 12px 12px 0;
     }
     .section-head h3 {
       margin: 0;

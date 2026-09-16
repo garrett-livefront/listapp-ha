@@ -118,13 +118,16 @@ stock card (due dates, descriptions and the stock card's display-order option ar
   path; reconnecting (`connectedCallback`) re-runs availability tracking instead of trusting a stale
   guard (Copilot review comments on PR #14).
 - `unknown` is treated like `unavailable`.
-- Menus are exactly the stock card's: the Active section's ⋯ offers "Reorder items" / "Done
-  reordering" only when the entity supports `MOVE_TODO_ITEM`; the Completed section's ⋯ offers
-  "Clear completed" (with a confirmation) only when it supports `DELETE_TODO_ITEM`. There is no
+- Menus extend the stock card's: the Active section's ⋯ offers "Reorder items" / "Done
+  reordering" only when the entity supports `MOVE_TODO_ITEM`. The Completed section's ⋯ offers
+  "Uncheck all" (with a confirmation showing the count) when the entity supports
+  `UPDATE_TODO_ITEM`, and "Clear completed" (with a confirmation) when it supports
+  `DELETE_TODO_ITEM` — the two are gated independently, so an editor without delete permission
+  still sees Uncheck all (Garrett decided 2026-09-15; see [Uncheck all](#uncheck-all)). There is no
   footer. Reorder mode also ends if the entity loses `MOVE_TODO_ITEM` mid-session (a role
-  demotion), not just when the active list empties (Copilot review comment on PR #14). The one
-  header exception: with `show_completed: false`, the Clear-completed menu moves to the header so
-  it's reachable even with the Completed section hidden (Copilot review comment on PR #14).
+  demotion), not just when the active list empties (Copilot review comment on PR #14). When the
+  Completed section itself doesn't render, both bulk actions move into the Active menu instead —
+  see [Menu consolidation](#menu-consolidation).
 - `getCardSize` grows with the visible rows; `getGridOptions` reports 12 columns (min 6) and omits
   `rows` so the sections view sizes to content — HA's grid API takes a numeric row count, not
   `"auto"` (Copilot review comment on PR #14).
@@ -181,6 +184,34 @@ a second tap before the first resolves is meant to toggle the optimistic state b
 Clear-completed also re-filters its uids against the live list when confirmed, so an item someone
 unchecked while the dialog was open survives.
 
+### Uncheck all
+
+Garrett decided (2026-09-15) that the Completed menu also offers "Uncheck all": every completed
+item goes back to `needs_action` in place — nothing is deleted, unlike Clear completed. It gets its
+own confirmation dialog showing the count, the same as Clear completed, rather than firing
+immediately; re-confirmed against the live list at confirm time so an item unchecked while the
+dialog was open isn't re-sent. It only needs `UPDATE_TODO_ITEM`, not `DELETE_TODO_ITEM`, so it's
+gated separately from Clear completed.
+
+The `update_item` calls go out **in parallel** (`Promise.all`), not one at a time: each uid is an
+independent service call with no ordering dependency, unlike a move, so a long completed list waits
+on one round-trip instead of N in series. It follows the same in-flight guard and optimistic
+update/targeted-rollback pattern as the rest of the card (`_pending`, `_itemsVersion`): the affected
+items flip to `needs_action` immediately, and only the ones whose call actually failed roll back.
+
+### Menu consolidation
+
+With `show_completed: false`, or with the Completed section otherwise not rendered (no completed
+items, or mid-reorder), there's nowhere to host its ⋯ menu. Rather than special-casing the header
+(the previous `show_header: false` fix in PR #19) with a dedicated single-row bar, both Clear
+completed and Uncheck all move into the Active section's own ⋯ menu whenever the Completed section
+isn't rendered — one rule (`_consolidateCompleted`) instead of a header exception and a bar, and it
+keeps working with `show_header: false` for free since the Active menu doesn't depend on the header.
+The all-done state (no active items) gets a menu-only header row of its own so the actions stay
+reachable even with nothing active to attach the menu to; `getCardSize()` counts that row only in
+that case, since normally the actions fold into the Active section's existing header row at no
+extra size.
+
 ### Lifecycle
 
 Disconnecting closes any open dialog or menu. A modal `<dialog>` drops out of the top layer when
@@ -195,8 +226,8 @@ The ⋯ menu is absolutely positioned inside `ha-card`, which has `overflow: hid
 opens downward from the Completed section's header — always at the bottom of the card — gets
 clipped whenever there's less than a row of items below it. That menu opens upward (`.menu.up`),
 which is always safe because the Completed section is never first: the header, and either the
-Active section or the all-done tile, sit above it. The Active section's menu and the header's
-Clear-completed exception open downward as before. The direction is decided by where the menu is
+Active section or the all-done tile, sit above it. The Active section's menu — including when it
+hosts the consolidated bulk actions — opens downward as before. The direction is decided by where the menu is
 rendered rather than measured at open time, so it's deterministic and testable (Copilot review
 comment on PR #14).
 
@@ -253,12 +284,9 @@ field, no toggling, no menus) regardless of `show_header`, so the text was reinf
 UI already enforces, not the only signal of it. A config that says "hide the header" hides the whole
 header.
 
-**Clear-completed stays reachable.** With `show_completed: false` and completed items present, the
-header exception already moves the Clear-completed menu there (see "Menus and dialogs" above) since
-the Completed section that normally hosts it never renders. `show_header: false` hides the visual
-header but not that action: it renders in its own single-row `.head-clear-only` bar instead, so
-`show_header: false` + `show_completed: false` doesn't leave completed items permanently stuck
-(Copilot review comment on PR #19). `getCardSize()` counts that bar's row when it applies.
+**Clear completed and Uncheck all stay reachable.** With `show_completed: false`, or `show_header:
+false` + `show_completed: false` together, the Completed section's menu never renders — see [Menu
+consolidation](#menu-consolidation) for where the actions move instead.
 
 ## Editor
 
@@ -390,8 +418,8 @@ subline, 5 px progress bar, the add field as a filled block with a 2 px accent u
 on the right, 12 px/800 section labels at 1.2 px tracking, 22 px checkboxes with a 7 px radius,
 15.5 px item text (600 active, 500 struck-through completed), 13.5 px/700 "Show N more". Deliberate
 departures from the mock, all decided before the build: HA theme variables and font instead of the
-fixed greys and Manrope; no "shared by" footer, and no header ⋯ except the Clear-completed
-exception above; a dark glyph on low-contrast accents;
+fixed greys and Manrope; no "shared by" footer, and no header ⋯ menu at all; a dark glyph on
+low-contrast accents;
 native controls; the transient-unavailable and viewer-empty wording. The card's outer radius, border
 and shadow are left to `ha-card` so it matches the neighbouring cards in any theme, rather than
 forcing the mock's 16 px. The ⋯ is drawn as three 3.5 px dots in CSS, not a lucide glyph, to match
@@ -483,11 +511,13 @@ happy-dom (a per-file `@vitest-environment`; the rest of the suite stays in node
 `hass` whose `subscribeMessage`, `callService` and `callWS` can be held pending and resolved or
 rejected on cue. It pins the race behaviour: unsubscribe on disconnect (including a subscription
 that resolves only after disconnect), pushes for a previous entity being dropped, both overlapping
-failed toggles rolling back, no rollback over a newer push, the in-flight guards, the Completed menu
-opening upward, dialog/menu closing on disconnect, a drop for an item that left the active list, a
-slow availability check landing after recovery, the recheck interval stopping on disconnect, the
-subscribe backoff (retrying on its own timer rather than on `hass` updates, the 30 s cap, the reset
-after a successful subscribe, and cancellation on disconnect — all under fake timers), and an
+failed toggles rolling back, no rollback over a newer push, the in-flight guards, Uncheck all
+(parallel batch, confirm-time re-check, permission split from Clear completed, targeted rollback on
+a failed call), menu consolidation into the Active menu when Completed isn't rendered, the Completed
+menu opening upward, dialog/menu closing on disconnect, a drop for an item that left the active
+list, a slow availability check landing after recovery, the recheck interval stopping on disconnect,
+the subscribe backoff (retrying on its own timer rather than on `hass` updates, the 30 s cap, the
+reset after a successful subscribe, and cancellation on disconnect — all under fake timers), and an
 entry-id lookup that lands after the entity vanished being discarded. happy-dom has no layout, so
 `ResizeObserver` is stubbed and nothing asserts on geometry; `frontend/dev/harness.js` remains the
 visual check and is not run in CI.
