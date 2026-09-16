@@ -7,8 +7,8 @@ export interface HassEntity {
     friendly_name?: string;
     supported_features?: number;
     list_id?: string | null;
-    color?: string | null;
-    icon?: string | null;
+    list_color?: string | null;
+    list_icon?: string | null;
     role?: string | null;
   };
 }

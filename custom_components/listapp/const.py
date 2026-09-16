@@ -23,8 +23,8 @@ ROLE_VIEWER: Final = "VIEWER"
 KNOWN_ROLES: Final = frozenset({ROLE_OWNER, ROLE_EDITOR, ROLE_VIEWER})
 
 ATTR_LIST_ID: Final = "list_id"
-ATTR_COLOR: Final = "color"
-ATTR_ICON: Final = "icon"
+ATTR_LIST_COLOR: Final = "list_color"
+ATTR_LIST_ICON: Final = "list_icon"
 ATTR_ROLE: Final = "role"
 
 CONF_READ_ONLY: Final = "read_only"

@@ -57,7 +57,7 @@ class FakeHass implements HomeAssistant {
       [entity]: {
         entity_id: entity,
         state,
-        attributes: { friendly_name: "Test", supported_features: features, list_id: "l1", color: null, icon: null, role: "owner" },
+        attributes: { friendly_name: "Test", supported_features: features, list_id: "l1", list_color: null, list_icon: null, role: "owner" },
       },
     };
   }

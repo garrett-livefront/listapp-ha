@@ -27,10 +27,27 @@ from .api import (
     ListAppList,
     ListAppNotFoundError,
 )
-from .const import ATTR_COLOR, ATTR_ICON, ATTR_LIST_ID, ATTR_ROLE, DOMAIN, KNOWN_ROLES
+from .const import (
+    ATTR_LIST_COLOR,
+    ATTR_LIST_ICON,
+    ATTR_LIST_ID,
+    ATTR_ROLE,
+    DOMAIN,
+    KNOWN_ROLES,
+    ROLE_EDITOR,
+    ROLE_OWNER,
+    ROLE_VIEWER,
+)
 from .coordinator import ListAppConfigEntry, ListAppCoordinator
 
 PARALLEL_UPDATES = 1
+
+ROLE_ICONS = {
+    ROLE_OWNER: "mdi:crown-outline",
+    ROLE_EDITOR: "mdi:pencil-outline",
+    ROLE_VIEWER: "mdi:eye-outline",
+}
+DEFAULT_ROLE_ICON = "mdi:format-list-checks"
 
 
 def _device_identifier(account_id: str, list_id: str) -> tuple[str, str]:
@@ -109,7 +126,7 @@ async def async_setup_entry(
 class ListAppTodoEntity(CoordinatorEntity[ListAppCoordinator], TodoListEntity):
     _attr_has_entity_name = True
     # The card reads these live; recording them would just bloat history. See docs/card.md.
-    _unrecorded_attributes = frozenset({ATTR_LIST_ID, ATTR_COLOR, ATTR_ICON, ATTR_ROLE})
+    _unrecorded_attributes = frozenset({ATTR_LIST_ID, ATTR_LIST_COLOR, ATTR_LIST_ICON, ATTR_ROLE})
 
     def __init__(self, coordinator: ListAppCoordinator, list_id: str) -> None:
         super().__init__(coordinator)
@@ -140,10 +157,18 @@ class ListAppTodoEntity(CoordinatorEntity[ListAppCoordinator], TodoListEntity):
             return None
         return {
             ATTR_LIST_ID: self._list_id,
-            ATTR_COLOR: self._list.color,
-            ATTR_ICON: self._list.icon,
+            ATTR_LIST_COLOR: self._list.color,
+            ATTR_LIST_ICON: self._list.icon,
             ATTR_ROLE: self._list.my_role.lower() if self._list.my_role in KNOWN_ROLES else None,
         }
+
+    @property
+    def icon(self) -> str:
+        # The HA icon reflects the caller's role, not the list's own icon (the list name already
+        # conveys identity) — see docs/architecture.md#entities.
+        if self._list is None:
+            return DEFAULT_ROLE_ICON
+        return ROLE_ICONS.get(self._list.my_role, DEFAULT_ROLE_ICON)
 
     @property
     def supported_features(self) -> TodoListEntityFeature:

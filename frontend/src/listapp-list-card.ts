@@ -375,7 +375,7 @@ export class ListAppListCard extends LitElement {
     const computed = getComputedStyle(this);
     const background = computed.getPropertyValue("--card-background-color").trim() || (dark ? "#1c1c1c" : "#ffffff");
     const accent = this._config!.useListColor
-      ? resolveListColor(stateObj?.attributes.color, stateObj?.attributes.list_id ?? this._config!.entity)
+      ? resolveListColor(stateObj?.attributes.list_color, stateObj?.attributes.list_id ?? this._config!.entity)
       : computed.getPropertyValue("--primary-color").trim() || HA_PRIMARY_FALLBACK;
     const key = `${accent}|${background}|${dark}`;
     if (this._paletteKey !== key) {
@@ -421,7 +421,7 @@ export class ListAppListCard extends LitElement {
       return this._renderUnavailable(view);
     }
     return html`
-      ${this._renderHeader(view, stateObj.attributes.icon)}
+      ${this._renderHeader(view, stateObj.attributes.list_icon)}
       ${view.showProgress && view.state !== "loading" ? this._renderProgress(view) : nothing}
       ${this._renderBody(view)}
     `;

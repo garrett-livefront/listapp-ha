@@ -19,15 +19,20 @@ Each list's `todo` entity exposes on `extra_state_attributes`:
 | Attribute | Type | Source |
 | --- | --- | --- |
 | `list_id` | `str` | the list's id |
-| `color` | `str \| None` | `ListResponse.color` (a hex string), or `None` |
-| `icon` | `str \| None` | `ListResponse.icon` (an icon key, e.g. `shopping-cart`), or `None` |
+| `list_color` | `str \| None` | `ListResponse.color` (a hex string), or `None` |
+| `list_icon` | `str \| None` | `ListResponse.icon` (an icon key, e.g. `shopping-cart`), or `None` |
 | `role` | `str \| None` | `my_role` lower-cased when it's `OWNER`/`EDITOR`/`VIEWER`, else `None` |
+
+`list_color`/`list_icon` were `color`/`icon` until PR #23 — `icon` collides with HA's reserved
+attribute, which broke the entity icon everywhere but the card; see
+[Roles](architecture.md#roles) for the fallout and the fix. No back-compat alias: old names appear
+nowhere in the final state.
 
 No owner/sharer name is exposed — the card doesn't show "shared by" (Garrett decided this; see the
 plan). Names are snake_case and stable; the card depends on them, so a rename here is a breaking
 change for the card.
 
-`color` and `icon` follow the same path as `title` and `my_role` already do (`api.py`'s
+`list_color` and `list_icon` follow the same path as `title` and `my_role` already do (`api.py`'s
 `_parse_list`, `ListAppCoordinator` polling, and the `list.updated` SSE handler) — see
 [Roles](architecture.md#roles) for the precedent this follows, including why `list.updated`'s
 `myRole` is ignored but its `color`/`icon` are applied directly (unlike role, they aren't

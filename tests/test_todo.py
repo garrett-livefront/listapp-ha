@@ -276,13 +276,13 @@ async def test_role_demotion_updates_supported_features(
 
 
 @pytest.mark.parametrize(
-    ("role", "expected_role", "color", "icon"),
+    ("role", "expected_role", "color", "icon", "expected_ha_icon"),
     [
-        ("OWNER", "owner", "#ff0000", "shopping-cart"),
-        ("EDITOR", "editor", None, None),
-        ("VIEWER", "viewer", "#00ff00", None),
-        (None, None, None, "list"),
-        ("ADMIN", None, None, None),
+        ("OWNER", "owner", "#ff0000", "shopping-cart", "mdi:crown-outline"),
+        ("EDITOR", "editor", None, None, "mdi:pencil-outline"),
+        ("VIEWER", "viewer", "#00ff00", None, "mdi:eye-outline"),
+        (None, None, None, "list", "mdi:format-list-checks"),
+        ("ADMIN", None, None, None, "mdi:format-list-checks"),
     ],
 )
 async def test_extra_state_attributes(
@@ -293,6 +293,7 @@ async def test_extra_state_attributes(
     expected_role: str | None,
     color: str | None,
     icon: str | None,
+    expected_ha_icon: str,
 ) -> None:
     register_lists(
         aioclient_mock,
@@ -304,9 +305,41 @@ async def test_extra_state_attributes(
 
     state = hass.states.get(todo_entity_id(hass, GROCERIES_ID))
     assert state.attributes["list_id"] == GROCERIES_ID
-    assert state.attributes["color"] == color
-    assert state.attributes["icon"] == icon
+    assert state.attributes["list_color"] == color
+    assert state.attributes["list_icon"] == icon
     assert state.attributes["role"] == expected_role
+    assert state.attributes["icon"] == expected_ha_icon
+
+
+async def test_icon_updates_on_role_change_at_runtime(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    register_lists(aioclient_mock, [list_payload(GROCERIES_ID, "Groceries", [], my_role="OWNER")])
+    config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    entity_id = todo_entity_id(hass, GROCERIES_ID)
+    coordinator = config_entry.runtime_data
+    assert hass.states.get(entity_id).attributes["icon"] == "mdi:crown-outline"
+
+    coordinator._handle_stream_event(
+        StreamEvent(
+            event="member.upserted",
+            data=json.dumps(
+                list_change_event(
+                    "member.upserted",
+                    GROCERIES_ID,
+                    member_upserted_ref("membership-1", ACCOUNT_ID, "VIEWER"),
+                )
+            ),
+        )
+    )
+    await asyncio.sleep(0.6)
+    await hass.async_block_till_done()
+
+    assert hass.states.get(entity_id).attributes["icon"] == "mdi:eye-outline"
 
 
 async def test_extra_state_attributes_update_after_refresh(
@@ -319,7 +352,7 @@ async def test_extra_state_attributes_update_after_refresh(
     await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
     entity_id = todo_entity_id(hass, GROCERIES_ID)
-    assert hass.states.get(entity_id).attributes["color"] is None
+    assert hass.states.get(entity_id).attributes["list_color"] is None
 
     aioclient_mock.clear_requests()
     aioclient_mock.get(
@@ -329,8 +362,8 @@ async def test_extra_state_attributes_update_after_refresh(
     await config_entry.runtime_data.async_request_refresh()
     await hass.async_block_till_done()
 
-    assert hass.states.get(entity_id).attributes["color"] == "#123456"
-    assert hass.states.get(entity_id).attributes["icon"] == "cart"
+    assert hass.states.get(entity_id).attributes["list_color"] == "#123456"
+    assert hass.states.get(entity_id).attributes["list_icon"] == "cart"
 
 
 async def test_extra_state_attributes_update_from_stream_event(
@@ -362,8 +395,8 @@ async def test_extra_state_attributes_update_from_stream_event(
     await asyncio.sleep(0.6)
     await hass.async_block_till_done()
 
-    assert hass.states.get(entity_id).attributes["color"] == "#abcdef"
-    assert hass.states.get(entity_id).attributes["icon"] == "basket"
+    assert hass.states.get(entity_id).attributes["list_color"] == "#abcdef"
+    assert hass.states.get(entity_id).attributes["list_icon"] == "basket"
 
 
 async def test_list_removed_on_poll_404(
