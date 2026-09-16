@@ -1,6 +1,12 @@
 // Defines the card tags synchronously, then lazy-loads the implementation — see
 // docs/card.md#fast-registration
-import { CARD_TYPE, resolveConfig, stubConfig, type ListAppCardConfig } from "./config.js";
+import {
+  CARD_TYPE,
+  resolveConfig,
+  stubConfig,
+  type ListAppCardConfig,
+  type ResolvedConfig,
+} from "./config.js";
 import { CARD_IMPL_TAG, EDITOR_IMPL_TAG, EDITOR_TAG } from "./tags.js";
 import type { HomeAssistant } from "./ha.js";
 
@@ -119,15 +125,25 @@ class ListAppListCardEntry extends LazyHost {
   }
 
   protected override readonly implTag = CARD_IMPL_TAG;
+  private _resolved?: ResolvedConfig;
 
   // Validates before the implementation exists, so a bad config still throws from setConfig.
   override setConfig(config: ListAppCardConfig): void {
-    resolveConfig(config);
+    this._resolved = resolveConfig(config);
     super.setConfig(config);
   }
 
+  // Mirrors the implementation's loading-state size, not its no-config size, so the row count
+  // doesn't change when the chunk mounts — see docs/card.md#fast-registration
   getCardSize(): number {
-    return this._impl?.getCardSize?.() ?? 3;
+    const loaded = this._impl?.getCardSize?.();
+    if (loaded !== undefined) {
+      return loaded;
+    }
+    if (!this._resolved || !this._hass?.states?.[this._resolved.entity]) {
+      return 3;
+    }
+    return 1 + (this._resolved.showHeader ? 1 : 0);
   }
 
   getGridOptions(): unknown {

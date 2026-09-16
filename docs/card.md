@@ -156,9 +156,18 @@ The wrapper has to behave correctly in the window before the implementation exis
   `setConfig` the way HA expects, then stores the raw config for the implementation.
 - The `hass` setter stores the latest value and replays it onto the implementation at mount, so a
   `hass` set during the gap isn't lost.
-- `getCardSize()` returns 3 — the implementation's own no-config answer — and `getGridOptions()`
-  returns the exact `{ columns: 12, min_columns: 6 }` the implementation returns, so the layout
-  doesn't shift when the chunk lands. Both delegate once it has.
+- `getCardSize()` mirrors the size the implementation reports **while items are loading**, which is
+  the state the chunk actually mounts into: `1 + (show_header ? 1 : 0)`, because the progress bar
+  and the add form are both suppressed during loading and there are no item rows yet. It falls back
+  to the implementation's no-config answer of 3 when there is no config, or when the entity isn't in
+  `hass.states` (the implementation's `missing` state, also 3). An earlier revision returned a flat
+  3, which silently collapsed to 2 the instant the chunk mounted — the exact layout shift this
+  wrapper exists to avoid (Copilot review comment on PR #24). The one case still not mirrored is
+  `unavailable_auth` / `unavailable_transient`, where the implementation returns 3 and the wrapper
+  says 2: those are derived from an availability probe the entry can't run without pulling the API
+  client into the size-budgeted bundle, and they cost one row in an error state rather than on every
+  normal load. `getGridOptions()` returns the exact `{ columns: 12, min_columns: 6 }` the
+  implementation returns. Both delegate once the chunk has landed.
 - Nothing is rendered during the gap. An empty card for a few hundred milliseconds beats a spinner
   or a placeholder that resizes.
 - A rejected import (offline, or the chunk 404ing) is caught and replaced with a readable notice
@@ -572,6 +581,13 @@ npm run check:fresh  # rebuilds and fails if any committed bundle file or the ic
 `npm run build` emits **both** `listapp-list-card.js` and `listapp-list-card-impl.js`; both are
 committed, and `check:fresh` compares every file in the output directory (flagging a file that is
 emitted but uncommitted, or committed but no longer emitted) rather than just the entry.
+
+`check:fresh` builds into a scratch directory and compares, rather than rebuilding over the
+committed output. Rebuilding in place can't detect a file that is committed but no longer emitted:
+nothing deletes it, so it appears unchanged in both the before and after snapshots and the stale
+branch never fires. That matters more after the split, because `frontend.py` serves the whole
+directory and folds every `*.js` into the entry's `?v=` — an orphaned chunk would be served
+indefinitely and would skew the cache-busting hash (Copilot review comment on PR #24).
 
 `.github/workflows/card.yml` runs lint, typecheck, tests and `check:fresh` on every PR. The
 freshness check is what keeps the committed bundle honest: esbuild's output is deterministic for

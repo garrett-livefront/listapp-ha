@@ -47,6 +47,9 @@ describe("entry module registration", () => {
   it("defines both tags without the implementation chunk having loaded", () => {
     expect(customElements.get(CARD_TYPE)).toBeTruthy();
     expect(customElements.get(EDITOR_TAG)).toBeTruthy();
+    // The point of the split: importing the entry must not drag the implementation tags in.
+    expect(customElements.get(CARD_IMPL_TAG)).toBeFalsy();
+    expect(customElements.get(EDITOR_IMPL_TAG)).toBeFalsy();
   });
 
   it("advertises the card to the Lovelace picker exactly once", () => {
@@ -82,6 +85,28 @@ describe("lazy card wrapper", () => {
     el.setConfig(VALID);
     expect(el.getCardSize?.()).toBe(3);
     expect(el.getGridOptions?.()).toEqual({ columns: 12, min_columns: 6 });
+  });
+
+  it("matches the implementation's loading size once hass has the entity", () => {
+    const el = document.createElement(CARD_TYPE) as Host;
+    el.setConfig(VALID);
+    el.hass = { states: { "todo.groceries": { attributes: {} } } };
+    // Implementation while items load: header(1) + no progress + no add form + no rows + 1.
+    expect(el.getCardSize?.()).toBe(2);
+  });
+
+  it("drops the header row from the loading size when show_header is off", () => {
+    const el = document.createElement(CARD_TYPE) as Host;
+    el.setConfig({ ...VALID, show_header: false });
+    el.hass = { states: { "todo.groceries": { attributes: {} } } };
+    expect(el.getCardSize?.()).toBe(1);
+  });
+
+  it("keeps the no-config size when the entity is missing from hass", () => {
+    const el = document.createElement(CARD_TYPE) as Host;
+    el.setConfig(VALID);
+    el.hass = { states: {} };
+    expect(el.getCardSize?.()).toBe(3);
   });
 
   it("delegates size and grid to the implementation once it loads", async () => {
