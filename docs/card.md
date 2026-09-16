@@ -629,7 +629,7 @@ deliberately match HA's stock look instead of the mock: item text is
 `--ha-font-size-m`/`--ha-font-weight-normal` (14 px/400, active and completed alike, not the mock's
 15.5 px/600–500), the checkbox is 20 px with `--ha-border-radius-sm` (4 px, not the mock's 22 px/7
 px), and the glyph is always white (see [Colour](#colour)). Garrett compared the card side by side
-with a stock HA card and his own dashboard on a dark theme (2026-09-15) and asked for three further
+with a stock HA card and his own dashboard on a dark theme (2026-09-15) and asked for four further
 adjustments in the same direction: the unchecked checkbox border now uses
 `--ha-color-border-neutral-normal` (falling back to `--la-muted`/`--secondary-text-color`) instead
 of `--la-muted` directly — stock `ha-checkbox` uses that dedicated neutral-border token, which in

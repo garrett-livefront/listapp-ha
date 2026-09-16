@@ -1151,6 +1151,7 @@ export class ListAppListCard extends LitElement {
       justify-content: space-between;
       gap: 10px;
       margin: 16px 18px 0;
+      box-sizing: border-box;
       height: 56px;
       padding: 0 var(--ha-space-4, 16px);
       border-radius: var(--ha-border-radius-sm, 4px) var(--ha-border-radius-sm, 4px) 0 0;
