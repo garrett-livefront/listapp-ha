@@ -28,7 +28,6 @@ export const LIST_COLORS = [
 
 export const HA_PRIMARY_FALLBACK = "#03a9f4";
 export const WHITE = "#ffffff";
-export const DARK_GLYPH = "#1c1917";
 
 export type Rgb = [number, number, number];
 
@@ -112,13 +111,8 @@ export const NEUTRALS = {
   light: { field: "rgba(0, 0, 0, 0.06)", hover: "rgba(0, 0, 0, 0.04)", track: "rgba(0, 0, 0, 0.1)" },
 } as const;
 
-export const GLYPH_MIN_CONTRAST = 3;
 export const INK_MIN_CONTRAST = 4.5;
 export const DARK_INK_LIGHTEN = 0.38;
-
-export function glyphOn(accent: Rgb): string {
-  return contrast([255, 255, 255], accent) >= GLYPH_MIN_CONTRAST ? WHITE : DARK_GLYPH;
-}
 
 export function accentInk(accent: Rgb, background: Rgb, dark: boolean): string {
   if (dark) {
@@ -142,7 +136,7 @@ export function buildPalette(accentHex: string, backgroundHex: string, dark: boo
   const background = parseCssColor(backgroundHex) ?? (dark ? [28, 28, 28] : [255, 255, 255]);
   return {
     accent: toHex(accent),
-    glyph: glyphOn(accent),
+    glyph: WHITE,
     ink: accentInk(accent, background, dark),
     tint: tintOf(accent, dark),
     ...NEUTRALS[dark ? "dark" : "light"],
