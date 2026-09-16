@@ -14,6 +14,7 @@ from homeassistant.components.todo import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -31,6 +32,11 @@ from .coordinator import ListAppConfigEntry, ListAppCoordinator
 
 PARALLEL_UPDATES = 1
 
+
+def _device_identifier(account_id: str, list_id: str) -> tuple[str, str]:
+    return (DOMAIN, f"{account_id}_{list_id}")
+
+
 WRITE_FEATURES = (
     TodoListEntityFeature.CREATE_TODO_ITEM
     | TodoListEntityFeature.UPDATE_TODO_ITEM
@@ -46,6 +52,7 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     registry = er.async_get(hass)
+    devices = dr.async_get(hass)
     known: set[str] = set()
     registered = {
         registry_entry.unique_id.removeprefix(f"{coordinator.account_id}_")
@@ -53,12 +60,26 @@ async def async_setup_entry(
         if registry_entry.domain == TODO_DOMAIN
     }
 
+    # H3 moved from one account-level device to one device per list; clean up the orphan.
+    if legacy_device := devices.async_get_device_by_identifier(
+        (DOMAIN, coordinator.account_id), entry.entry_id
+    ):
+        devices.async_remove_device(legacy_device.id)
+
     @callback
     def sync_entities() -> None:
         current = set(coordinator.data)
         if added := current - known:
             known.update(added)
             async_add_entities(ListAppTodoEntity(coordinator, list_id) for list_id in added)
+        for list_id in current:
+            devices.async_get_or_create(
+                config_entry_id=entry.entry_id,
+                identifiers={_device_identifier(coordinator.account_id, list_id)},
+                name=coordinator.data[list_id].title,
+                manufacturer="Listapp",
+                entry_type=DeviceEntryType.SERVICE,
+            )
         stale = (known | registered) - current
         registered.clear()
         for list_id in stale:
@@ -66,6 +87,10 @@ async def async_setup_entry(
             unique_id = f"{coordinator.account_id}_{list_id}"
             if entity_id := registry.async_get_entity_id(TODO_DOMAIN, DOMAIN, unique_id):
                 registry.async_remove(entity_id)
+            if device := devices.async_get_device_by_identifier(
+                _device_identifier(coordinator.account_id, list_id), entry.entry_id
+            ):
+                devices.async_remove_device(device.id)
 
     sync_entities()
     entry.async_on_unload(coordinator.async_add_listener(sync_entities))
@@ -81,9 +106,9 @@ class ListAppTodoEntity(CoordinatorEntity[ListAppCoordinator], TodoListEntity):
         self._list_id = list_id
         self._attr_unique_id = f"{coordinator.account_id}_{list_id}"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.account_id)},
-            name="ListApp",
-            manufacturer="ListApp",
+            identifiers={_device_identifier(coordinator.account_id, list_id)},
+            name=self._list.title if self._list else None,
+            manufacturer="Listapp",
             entry_type=DeviceEntryType.SERVICE,
         )
 
@@ -95,9 +120,9 @@ class ListAppTodoEntity(CoordinatorEntity[ListAppCoordinator], TodoListEntity):
     def available(self) -> bool:
         return super().available and self._list is not None
 
-    @property
-    def name(self) -> str | None:
-        return self._list.title if self._list else None
+    # Primary entity of a per-list device (see docs/architecture.md#entities): the friendly
+    # name comes from the device name, not this entity's own name.
+    _attr_name = None
 
     @property
     def extra_state_attributes(self) -> dict[str, str | None] | None:

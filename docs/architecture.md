@@ -56,8 +56,14 @@ override both, and they're read when the integration module is imported. See
 - **One `todo` entity per selected list** (see [List picker](#list-picker)), each filled from
   `GET /lists/{id}`. `unique_id` is `<account id>_<list id>`, so the same shared list linked through
   two accounts gives two distinct entities.
-- **One service device per account**, named "ListApp", so entity IDs come out as
-  `todo.listapp_<list title>`. The entry title is the account email, to tell entries apart.
+- **One service device per list** (identifiers `<account id>_<list id>`), named after the list, and
+  the todo entity is that device's primary entity (`_attr_name = None`), so the friendly name is the
+  bare list title instead of "ListApp <title>". `todo.py`'s `sync_entities` keeps the device name in
+  sync on every coordinator update — HA doesn't re-push `device_info` on a rename, only at entity
+  creation — and removes a list's device alongside its entity-registry entry when the list
+  disappears. **Upgrade impact:** unique_ids are unchanged, so existing entity_ids and dashboards
+  keep working; only the displayed name changes, and the old single "ListApp" account-level device
+  (identifier `<account id>`) is removed on the next setup as an orphan.
 - **Lists disappear, but never appear, on their own.** A selected list that is deleted or whose
   access is revoked (a 404 on poll, or `list.deleted`/`member.deleted` on the stream) is dropped
   from the selection and its entity removed from the registry, so there are no orphaned

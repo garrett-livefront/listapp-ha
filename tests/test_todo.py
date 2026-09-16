@@ -10,6 +10,7 @@ from homeassistant.config_entries import SOURCE_REAUTH
 from homeassistant.const import ATTR_ENTITY_ID, ATTR_SUPPORTED_FEATURES
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
@@ -29,6 +30,7 @@ from .helpers import (
     groceries,
     item_payload,
     list_change_event,
+    list_device,
     list_payload,
     member_upserted_ref,
     todo_entity_id,
@@ -56,7 +58,8 @@ async def _call(hass: HomeAssistant, service: str, entity_id: str, **data: Any) 
 
 async def test_entity_state_and_items(hass: HomeAssistant, entity_id: str) -> None:
     state = hass.states.get(entity_id)
-    assert entity_id == "todo.listapp_groceries"
+    assert entity_id == "todo.groceries"
+    assert state.name == "Groceries"
     assert state.state == "2"
     assert state.attributes[ATTR_SUPPORTED_FEATURES] == 15
 
@@ -400,6 +403,76 @@ async def test_orphan_from_previous_run_is_removed(
 
     assert todo_entity_id(hass, CHORES_ID) is None
     assert todo_entity_id(hass, GROCERIES_ID) is not None
+
+
+async def test_device_per_list(
+    hass: HomeAssistant, entity_id: str, config_entry: MockConfigEntry
+) -> None:
+    device = list_device(hass, config_entry.entry_id, GROCERIES_ID)
+    assert device is not None
+    assert device.name == "Groceries"
+    assert device.manufacturer == "Listapp"
+
+    entity_entry = er.async_get(hass).async_get(entity_id)
+    assert entity_entry.device_id == device.id
+
+
+async def test_rename_propagates_to_device(
+    hass: HomeAssistant,
+    entity_id: str,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(
+        f"{API_BASE_URL}/lists/{GROCERIES_ID}",
+        json=list_payload(GROCERIES_ID, "Grocery Run", []),
+    )
+
+    await config_entry.runtime_data.async_request_refresh()
+    await hass.async_block_till_done()
+
+    device = list_device(hass, config_entry.entry_id, GROCERIES_ID)
+    assert device.name == "Grocery Run"
+    assert hass.states.get(entity_id).name == "Grocery Run"
+
+
+async def test_removed_list_removes_its_device(
+    hass: HomeAssistant,
+    entity_id: str,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{API_BASE_URL}/lists/{GROCERIES_ID}", status=404)
+    await config_entry.runtime_data.async_stop_stream()
+
+    freezer.tick(UPDATE_INTERVAL + timedelta(seconds=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert list_device(hass, config_entry.entry_id, GROCERIES_ID) is None
+
+
+async def test_legacy_account_device_is_removed(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, config_entry: MockConfigEntry
+) -> None:
+    config_entry.add_to_hass(hass)
+    device_registry = dr.async_get(hass)
+    legacy = device_registry.async_get_or_create(
+        config_entry_id=config_entry.entry_id,
+        identifiers={(DOMAIN, ACCOUNT_ID)},
+        name="ListApp",
+        manufacturer="ListApp",
+    )
+    register_lists(aioclient_mock, [groceries()])
+
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert device_registry.async_get(legacy.id) is None
+    assert list_device(hass, config_entry.entry_id, GROCERIES_ID) is not None
 
 
 async def test_list_gone_between_requests_is_skipped(
