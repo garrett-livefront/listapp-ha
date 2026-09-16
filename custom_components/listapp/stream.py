@@ -128,19 +128,19 @@ class ListAppEventStream:
                 return
             except _SelectionRejected:
                 _LOGGER.error(
-                    "ListApp rejected the selected lists for live updates; falling back to polling"
+                    "Listapp rejected the selected lists for live updates; falling back to polling"
                 )
                 self._on_selection_rejected()
                 return
             except _SelectionEmpty:
                 # Selection can only shrink at runtime; growing it reloads the entry.
-                _LOGGER.debug("ListApp live update stream has no lists selected; stopping")
+                _LOGGER.debug("Listapp live update stream has no lists selected; stopping")
                 return
             except (ClientError, TimeoutError, _Retryable) as err:
-                _LOGGER.debug("ListApp live update stream disconnected: %s", err)
+                _LOGGER.debug("Listapp live update stream disconnected: %s", err)
             except Exception as err:
                 _LOGGER.warning(
-                    "ListApp live update stream hit an unexpected error: %s", err, exc_info=err
+                    "Listapp live update stream hit an unexpected error: %s", err, exc_info=err
                 )
             finally:
                 self._on_state_change(False)

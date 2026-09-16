@@ -1,4 +1,4 @@
-ListApp for Home Assistant
+Listapp for Home Assistant
 Copyright (c) 2026 Garrett Schafer
 
 This repository is licensed under the terms in LICENSE. The bundled Lovelace card
@@ -69,5 +69,5 @@ Lucide — ISC License
   CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
   PERFORMANCE OF THIS SOFTWARE.
 
-The avatarColor() function in frontend/src/color.ts is a port of lib/avatar.ts from the ListApp
+The avatarColor() function in frontend/src/color.ts is a port of lib/avatar.ts from the Listapp
 mobile app (same author).

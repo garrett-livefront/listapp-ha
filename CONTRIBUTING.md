@@ -1,4 +1,4 @@
-# Contributing to ListApp for Home Assistant
+# Contributing to Listapp for Home Assistant
 
 ## Local development
 
@@ -7,7 +7,7 @@ To try the integration before it's on HACS:
 1. Copy `custom_components/listapp` into your Home Assistant config directory's
    `custom_components/` folder.
 2. Restart Home Assistant.
-3. **Settings → Devices & services → Add integration → ListApp**, then sign in to ListApp in the
+3. **Settings → Devices & services → Add integration → Listapp**, then sign in to Listapp in the
    browser window that opens.
 
 Each list you select in the picker shows up as its own `todo` entity named after the list.

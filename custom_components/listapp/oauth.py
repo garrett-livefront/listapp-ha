@@ -23,7 +23,7 @@ class ListAppOAuth2Implementation(config_entry_oauth2_flow.LocalOAuth2Implementa
 
     @property
     def name(self) -> str:
-        return "ListApp"
+        return "Listapp"
 
 
 _REGISTRATION_LOCK: HassKey[asyncio.Lock] = HassKey(f"{DOMAIN}_registration_lock")
