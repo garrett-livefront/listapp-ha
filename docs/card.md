@@ -738,7 +738,16 @@ mock `hass`. Slice 4 reuses the card side of the harness for README screenshots.
 
 ### README screenshot recipe
 
-Use the tracked script — `cd frontend && npm run dev &` then `node scripts/capture-screenshots.mjs`
+Use the tracked script, from `frontend/`, as two separate commands (not `cd frontend && npm run dev
+&` — backgrounding that whole list forks a subshell, so the `cd` never affects the shell you run the
+next command in):
+
+```
+cd frontend
+npm run dev &
+node scripts/capture-screenshots.mjs
+```
+
 (see [CONTRIBUTING.md](../CONTRIBUTING.md)). It drives the dev harness over CDP at the harness's
 `width=380` slider value, then clips each rendered `.theme` column (card plus its 16px padding) at
 `deviceScaleFactor: 2`. The 824px width in every committed image is a *consequence* of that —
@@ -746,6 +755,12 @@ Use the tracked script — `cd frontend && npm run dev &` then `node scripts/cap
 412), doubled by the DPR — not a target hit by any other means. **Never resize, scale, or crop a
 capture after the fact.** If a future design change moves the natural width off 824, that's fine;
 report the new width rather than forcing the old one.
+
+The script writes light **and** dark for all six harness scenarios (12 files) — it doesn't know the
+README only references 7. Delete the ones it writes that the README doesn't link (currently
+`card-colored-icon-dark`, `card-empty-dark`, `card-unavailable-reauth-light`, `card-viewer-dark`,
+`card-collapse-dark` — Garrett's call on PR #29 was to drop them rather than keep them in sync) after
+running it, or restore them from git history if a future change needs them back.
 
 Before committing, verify the icon tile — CSS `38×38` — measures exactly `76×76` in the output.
 `card-unavailable-reauth-dark` has no tile (it's the reauth banner state), so that check doesn't
