@@ -8,6 +8,7 @@ import {
   type ResolvedConfig,
 } from "./config.js";
 import { CARD_IMPL_TAG, EDITOR_IMPL_TAG, EDITOR_TAG } from "./tags.js";
+import { REGISTRATION_TIMEOUT_MS, defineWithRetry } from "./register.js";
 import type { HomeAssistant } from "./ha.js";
 
 declare const __IMPL_URL__: string;
@@ -80,9 +81,29 @@ class LazyHost extends HTMLElement {
       return;
     }
     void loadImpl().then(
-      () => this._mount(),
+      () => this._whenImplDefined().then(
+        () => this._mount(),
+        (err: unknown) => this._fail(err),
+      ),
       (err: unknown) => this._fail(err),
     );
+  }
+
+  // The chunk's own define can be swallowed too, and its retry chain may still be running —
+  // see docs/card.md#registry-patching
+  private _whenImplDefined(): Promise<unknown> {
+    if (customElements.get(this.implTag)) {
+      return Promise.resolve();
+    }
+    return Promise.race([
+      customElements.whenDefined(this.implTag),
+      new Promise((_resolve, reject) =>
+        setTimeout(
+          () => reject(new Error(`${this.implTag} was never defined`)),
+          REGISTRATION_TIMEOUT_MS,
+        ),
+      ),
+    ]);
   }
 
   private _mount(): void {
@@ -155,20 +176,28 @@ class ListAppListCardEditorEntry extends LazyHost {
   protected override readonly implTag = EDITOR_IMPL_TAG;
 }
 
-if (!customElements.get(CARD_TYPE)) {
-  customElements.define(CARD_TYPE, ListAppListCardEntry);
+// Holds the picker entry back until both host tags resolve — see docs/card.md#registry-patching
+function advertiseToPicker(): void {
+  const cards = (window.customCards ??= []);
+  if (!cards.some((card) => card.type === CARD_TYPE)) {
+    cards.push({
+      type: CARD_TYPE,
+      name: "Listapp list",
+      description: "A Listapp list with its colour, icon and progress.",
+      preview: true,
+    });
+  }
 }
 
-if (!customElements.get(EDITOR_TAG)) {
-  customElements.define(EDITOR_TAG, ListAppListCardEditorEntry);
+export function registerCardElements(registry: CustomElementRegistry): void {
+  defineWithRetry(
+    registry,
+    [
+      [CARD_TYPE, ListAppListCardEntry],
+      [EDITOR_TAG, ListAppListCardEditorEntry],
+    ],
+    { onAllResolved: advertiseToPicker },
+  );
 }
 
-window.customCards = window.customCards ?? [];
-if (!window.customCards.some((card) => card.type === CARD_TYPE)) {
-  window.customCards.push({
-    type: CARD_TYPE,
-    name: "Listapp list",
-    description: "A Listapp list with its colour, icon and progress.",
-    preview: true,
-  });
-}
+registerCardElements(customElements);
