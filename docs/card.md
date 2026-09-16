@@ -44,8 +44,40 @@ in `hass.data[DOMAIN]`, which survives entry reloads and multiple config entries
 per-instance "unregister" story for either `async_register_static_paths` or `add_extra_js_url`, and
 HA doesn't need one: unlike a config entry's own resources, this reflects the *integration* being
 installed, not any one account being linked). The flag is set only after registration succeeds, and
-an `asyncio.Lock` in the same dict serializes concurrent config-entry setups so two entries can't
-both pass the flag check before either has registered (Copilot review comment on PR #13).
+an `asyncio.Lock` in the same dict serializes concurrent setups so two callers can't both pass the
+flag check before either has registered (Copilot review comment on PR #13).
+
+### <a id="integration-level"></a>Why registration is at integration level, not per entry
+
+`__init__.py`'s domain-level `async_setup` awaits `async_register_frontend`; `async_setup_entry`
+does not. HA runs `async_setup` for the domain to completion before it sets up any of the domain's
+config entries, so the static path and the extra-JS URL exist before anything that can be slow or
+fail has run.
+
+Registering from `async_setup_entry` instead — how this shipped originally — produced
+"Configuration error" on every Listapp card after each HA restart or integration update, and an
+endless spinner in the card picker, until the user manually reloaded the page (hit by Garrett and a
+second user, 2026-09-15). The window is real and not small: browsers reconnect to a restarting HA
+and the frontend starts serving dashboards immediately, while entry setup does an OAuth token
+refresh, `_async_migrate_selection`, and `async_config_entry_first_refresh()` — three network calls
+— before it finishes. A dashboard requesting `/listapp_frontend/listapp-list-card.js` inside that
+window gets a 404, and **a failed ES module import is permanent for that page session**: the browser
+caches the failure, the custom element never defines, and `hui-card` renders "Configuration error"
+forever. Nothing re-fires when the entry finally loads. That asymmetry — a late registration costs a
+broken page until reload, an early one costs nothing — is why this belongs as early as possible.
+
+The same reasoning rules out gating it on anything else: the card asset is static and
+account-independent, so an entry stuck in a reauth loop or retrying `ConfigEntryNotReady` must still
+leave the card registered. It also can't sit behind a network call.
+
+Ordering is safe by construction: `async_setup` only touches `hass.data[DOMAIN]`, `hass.http` and
+the frontend's URL list, none of which the device or entity registries read — unlike the
+registration ordering inside `async_setup_entry`, which does matter (see PR #20).
+
+One accepted limitation: HA only sets a domain's component up when it has at least one config entry
+(YAML is refused — `CONFIG_SCHEMA` is `cv.config_entry_only_config_schema`), so a fresh install with
+zero entries doesn't register the card. There's nothing to show at that point, and adding the first
+entry sets the component up, `async_setup` first.
 
 - `custom_components/listapp/frontend/listapp-list-card.js` is served at
   `/listapp_frontend/listapp-list-card.js` via `hass.http.async_register_static_paths`
@@ -63,7 +95,8 @@ both pass the flag check before either has registered (Copilot review comment on
   update, so the static path should cache long-lived like any other bundled asset (Copilot review
   comment on PR #13; the hash-vs-version-bump choice is a Copilot review comment on PR #14).
 - `manifest.json` depends on `frontend` and `http` (previously just `auth`), since both must be set
-  up before `async_register_frontend` runs.
+  up before `async_register_frontend` runs — which is also what makes calling it from `async_setup`
+  safe.
 
 ### Why not a separate resource install step
 
@@ -487,7 +520,10 @@ See `NOTICE`: HA frontend (Apache-2.0, behaviour adapted), Lit (BSD-3-Clause, bu
 
 `tests/test_frontend.py` covers the "once per instance" guarantee directly: calling
 `async_register_frontend` twice registers the static path and the extra JS URL exactly once, and
-setting up two config entries plus a reload of one of them still registers exactly once. It pins
+setting up two config entries plus a reload of one of them still registers exactly once. It also
+pins the integration-level timing above: registered by `async_setup` with no config entry at all,
+still exactly once when an entry is added afterwards, and still registered when an entry fails with
+`ConfigEntryNotReady`. It pins
 static-path registration via `HomeAssistantHTTP.async_register_static_paths`, patched only after
 the real `http`/`frontend` components have done their own (unrelated) static-path registrations, so
 the count reflects only this integration's call.

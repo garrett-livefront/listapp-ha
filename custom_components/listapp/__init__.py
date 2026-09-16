@@ -9,15 +9,25 @@ from homeassistant.exceptions import (
     OAuth2TokenRequestReauthError,
 )
 from homeassistant.helpers import config_entry_oauth2_flow
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.typing import ConfigType
 
 from .api import ListAppAuthError, ListAppClient, ListAppError, ListAppUnavailableError
-from .const import CONF_READ_ONLY, CONF_SELECTED_LISTS, MAX_SELECTED_LISTS, SCOPE_WRITE
+from .const import (
+    CONF_READ_ONLY,
+    CONF_SELECTED_LISTS,
+    DOMAIN,
+    MAX_SELECTED_LISTS,
+    SCOPE_WRITE,
+)
 from .coordinator import ListAppConfigEntry, ListAppCoordinator
 from .frontend import async_register_frontend
 from .oauth import async_ensure_implementation
 
 PLATFORMS: list[Platform] = [Platform.TODO]
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def _async_migrate_selection(
@@ -38,8 +48,13 @@ async def _async_migrate_selection(
     )
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ListAppConfigEntry) -> bool:
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the card before any entry sets up — see docs/card.md#delivery."""
     await async_register_frontend(hass)
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ListAppConfigEntry) -> bool:
     await async_ensure_implementation(hass)
     implementation = await config_entry_oauth2_flow.async_get_config_entry_implementation(
         hass, entry
