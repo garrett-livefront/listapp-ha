@@ -8,7 +8,6 @@ import {
   parseCssColor,
   parseHex,
   resolveListColor,
-  tintOf,
   WHITE,
 } from "../src/color.js";
 
@@ -80,10 +79,6 @@ describe("accentInk", () => {
 });
 
 describe("palette", () => {
-  it("tints at 10% light and 18% dark", () => {
-    expect(tintOf([1, 2, 3], false)).toBe("rgba(1, 2, 3, 0.1)");
-    expect(tintOf([1, 2, 3], true)).toBe("rgba(1, 2, 3, 0.18)");
-  });
   it("falls back to HA's primary colour for an unparsable accent", () => {
     expect(buildPalette("var(--nope)", "#fff", false).accent).toBe("#03a9f4");
   });

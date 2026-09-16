@@ -293,7 +293,7 @@ both files; see [Fast registration](#fast-registration) for why the split exists
 | `src/listapp-list-card.ts` | the `LitElement`; rendering, subscriptions, event handlers, styles |
 | `src/model.ts` | pure state derivation: split/collapse items, viewer gating, card state, availability classification, move → `previous_uid` |
 | `src/config.ts` | option defaults and validation, `getStubConfig` |
-| `src/color.ts` | `avatarColor` port, palette (accent / glyph / ink / tint) and contrast maths |
+| `src/color.ts` | `avatarColor` port, palette (accent / glyph / ink) and contrast maths |
 | `src/icons.ts` + `src/icons.generated.ts` | lucide path data for the 26 list icons and the card's UI glyphs |
 | `src/ha.ts` | the slice of the HA frontend API the card touches: types, service and websocket helpers, `navigate` |
 | `src/strings.ts` | every user-facing string (English only — see [Open questions](#open-questions)) |
@@ -585,20 +585,26 @@ matters). If the mobile palette or hash changes, those vectors fail here.
 From the accent, `color.ts#buildPalette` derives:
 
 - **glyph** — the colour of white-on-accent content (tile icon, checked tick, accent-filled button
-  labels). Always white, matching HA's stock to-do card and the design's top tile. Garrett decided
-  (2026-09-15) to accept the contrast this costs rather than run a dark-glyph fallback: white falls
-  below the WCAG 3:1 graphics threshold on 8 of the app's 14 list colours (worst cases lime
-  `#84cc16` at 1.98:1 and yellow `#eab308` at 1.92:1; his own teal `#14b8a6` sits at 2.49:1). He has
-  already accepted the same trade in the mobile app, and plans a separate accent colour in the
-  palette later so brand colour and contrast can both be met. This does **not** pass 3:1 on those
-  eight colours; `frontend/test/color.test.ts` pins the always-white behaviour rather than a
-  contrast floor.
+  labels, and — since 2026-09-16 — the empty-state tile). Always white, matching HA's stock to-do
+  card and the design's top tile. Garrett decided (2026-09-15) to accept the contrast this costs
+  rather than run a dark-glyph fallback: white falls below the WCAG 3:1 graphics threshold on 8 of
+  the app's 14 list colours (worst cases lime `#84cc16` at 1.98:1 and yellow `#eab308` at 1.92:1;
+  his own teal `#14b8a6` sits at 2.49:1). He has already accepted the same trade in the mobile app,
+  and plans a separate accent colour in the palette later so brand colour and contrast can both be
+  met. This does **not** pass 3:1 on those eight colours; `frontend/test/color.test.ts` pins the
+  always-white behaviour rather than a contrast floor. This is the 3:1 **graphics** contrast case,
+  distinct from the 4.5:1 text case that **ink** (below) satisfies — don't conflate the two when
+  reasoning about a tile or icon's contrast.
+  The empty-state tile (`.state-icon`) used to be the odd one out — a pale accent-tinted square with
+  an accent-coloured glyph (**tint**, now removed) instead of the accent-filled, white-glyph
+  treatment every other tile uses (the header tile, the all-done tile, and — matching this same
+  correction — the OAuth error tile in listapp-api#112). It now matches: `background: var(--la-accent)`,
+  `color: var(--la-glyph)`, same size and radius as before.
 - **ink** — accent-coloured text and icons on the card background ("Show N more", the +, links).
   Dark themes lighten the accent by 38 % as the design does. Light themes darken any accent that
   doesn't already reach 4.5:1 against `--card-background-color`, in 12 % steps until it does (or
   reaches black) — not just the light accents above; `#3b82f6`, for instance, is also below 4.5:1
   on white and gets darkened the same way (Copilot review comment on PR #14).
-- **tint** — the accent at 18 % alpha (dark) or 10 % (light) for the empty-state tile.
 - **field / hover / track** — the neutral surfaces the design draws as fixed greys (add field
   background, row and menu hover, progress track). They are translucent black or white at the
   design's alpha, so they sit on whatever `--card-background-color` the theme has instead of

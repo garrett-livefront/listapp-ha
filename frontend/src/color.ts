@@ -99,7 +99,6 @@ export interface Palette {
   accent: string;
   glyph: string;
   ink: string;
-  tint: string;
   field: string;
   hover: string;
   track: string;
@@ -126,11 +125,6 @@ export function accentInk(accent: Rgb, background: Rgb, dark: boolean): string {
   return toHex(ink);
 }
 
-export function tintOf(accent: Rgb, dark: boolean): string {
-  const [r, g, b] = accent;
-  return `rgba(${r}, ${g}, ${b}, ${dark ? 0.18 : 0.1})`;
-}
-
 export function buildPalette(accentHex: string, backgroundHex: string, dark: boolean): Palette {
   const accent = parseCssColor(accentHex) ?? parseHex(HA_PRIMARY_FALLBACK)!;
   const background = parseCssColor(backgroundHex) ?? (dark ? [28, 28, 28] : [255, 255, 255]);
@@ -138,7 +132,6 @@ export function buildPalette(accentHex: string, backgroundHex: string, dark: boo
     accent: toHex(accent),
     glyph: WHITE,
     ink: accentInk(accent, background, dark),
-    tint: tintOf(accent, dark),
     ...NEUTRALS[dark ? "dark" : "light"],
   };
 }
