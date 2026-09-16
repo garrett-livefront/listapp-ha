@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.listapp.const import DOMAIN
+from custom_components.listapp.const import API_BASE_URL, DOMAIN
 from custom_components.listapp.frontend import CARD_FILENAME, CARD_URL, async_register_frontend
 
 from .conftest import register_lists
@@ -103,6 +103,76 @@ async def test_failed_registration_can_be_retried(hass: HomeAssistant) -> None:
         await async_register_frontend(hass)
 
         assert hass.http.async_register_static_paths.call_count == 2
+        assert add_extra_js_url.call_count == 1
+
+
+async def test_registered_by_async_setup_without_any_config_entry(hass: HomeAssistant) -> None:
+    """The card must be servable from HA start, entries or not — see docs/card.md#delivery."""
+    assert await async_setup_component(hass, "http", {})
+    assert await async_setup_component(hass, "frontend", {})
+
+    with (
+        patch("custom_components.listapp.frontend.add_extra_js_url") as add_extra_js_url,
+        patch.object(
+            hass.http, "async_register_static_paths", new_callable=AsyncMock
+        ) as register_static_paths,
+    ):
+        assert await async_setup_component(hass, DOMAIN, {})
+        await hass.async_block_till_done()
+
+        assert not hass.config_entries.async_entries(DOMAIN)
+        assert register_static_paths.call_count == 1
+        assert register_static_paths.call_args[0][0][0].url_path == CARD_URL
+        assert add_extra_js_url.call_count == 1
+
+
+async def test_still_registered_once_when_an_entry_is_added_later(
+    hass: HomeAssistant, aioclient_mock
+) -> None:
+    assert await async_setup_component(hass, "http", {})
+    assert await async_setup_component(hass, "frontend", {})
+    register_lists(aioclient_mock, [groceries()])
+
+    with (
+        patch("custom_components.listapp.frontend.add_extra_js_url") as add_extra_js_url,
+        patch.object(
+            hass.http, "async_register_static_paths", new_callable=AsyncMock
+        ) as register_static_paths,
+    ):
+        assert await async_setup_component(hass, DOMAIN, {})
+        entry = _entry(ACCOUNT_ID, "a@example.com")
+        entry.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert entry.state is ConfigEntryState.LOADED
+        assert register_static_paths.call_count == 1
+        assert add_extra_js_url.call_count == 1
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_registered_even_when_entry_setup_is_not_ready(
+    hass: HomeAssistant, aioclient_mock
+) -> None:
+    """A retrying entry must not leave dashboards without the card."""
+    assert await async_setup_component(hass, "http", {})
+    assert await async_setup_component(hass, "frontend", {})
+    aioclient_mock.get(f"{API_BASE_URL}/lists", status=503)
+    entry = _entry(ACCOUNT_ID, "a@example.com")
+    entry.add_to_hass(hass)
+
+    with (
+        patch("custom_components.listapp.frontend.add_extra_js_url") as add_extra_js_url,
+        patch.object(
+            hass.http, "async_register_static_paths", new_callable=AsyncMock
+        ) as register_static_paths,
+    ):
+        assert not await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert entry.state is ConfigEntryState.SETUP_RETRY
+        assert register_static_paths.call_count == 1
         assert add_extra_js_url.call_count == 1
 
 
