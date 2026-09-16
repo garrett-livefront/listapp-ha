@@ -286,14 +286,16 @@ Derived in `model.ts#deriveView`, in priority order:
 | `missing` | entity not in `hass.states` | warning row "Entity not found" |
 | `unavailable_auth` | entity `unavailable`/`unknown` **and** a `listapp` reauth flow is in progress (or the config entry is in `setup_error` with an auth-flavoured reason) | replaces header and body: warning triangle, "List unavailable", "Listapp needs you to sign in again…", **Sign in** |
 | `unavailable_transient` | `unavailable`/`unknown` otherwise | same layout with a cloud-off icon, "Can't reach Listapp right now", **Check integration** |
-| `loading` | subscribed, no message yet | header only |
+| `loading` | subscribed, no message yet | header only (nothing at all if `show_header: false`) |
 | `empty` | zero items | check-square tile, "Nothing on this list", "Add the first item above, or ask Assist to add one." (with `show_add: false`: "Ask Assist or the Listapp app to add the first item."; viewers see "Nothing has been added yet.") |
 | `all_done` | items but no active | accent circle with a check, "All done", "Every item on this list is checked off." or "N completed items are hidden." when `show_completed: false` |
 | `list` | otherwise | Active and Completed sections |
 
 **Viewer** is `role == "viewer"` **or** `supported_features` lacking `CREATE_TODO_ITEM` or
 `UPDATE_TODO_ITEM`. Viewers get no add field, no menus, no checkbox interaction (the input is
-`disabled`), no hover tint, no reorder, and the subline reads "N items · view only". Both signals
+`disabled`), no hover tint, no reorder, and (while `show_header` is on) the subline reads "N items ·
+view only" — `show_header: false` drops that marker along with the rest of the header, see
+"show_header" below. Both signals
 are checked because the integration's `supported_features` is what HA actually enforces, while
 `role` is what ListApp says; if they ever disagree the card errs on the read-only side.
 
