@@ -230,12 +230,28 @@ PR #14).
 | `entity` | required | a well-formed `todo.<object_id>` entity id; anything else throws in `setConfig` |
 | `title` | entity's friendly name | override |
 | `use_list_color` | `true` | `false` uses the theme's `--primary-color` as the accent |
-| `show_title` | `true` | `false` hides the title text only; the icon tile and subline stay (as in the design) |
+| `show_header` | `true` | `false` hides the whole header block — icon tile, title and subline — and forces the progress bar off too, regardless of `show_progress` |
 | `show_add` | `true` | the add field; always hidden for viewers regardless |
 | `show_completed` | `true` | the Completed section |
-| `show_progress` | `true` | the progress bar under the header |
+| `show_progress` | `true` | the progress bar under the header; ignored (forced off) while `show_header` is `false` |
 | `collapse_to` | `0` (off) | show N active items and a "Show N more" disclosure; must be a non-negative integer |
 | `item_tap_action` | `toggle` | `toggle` checks/unchecks on tap; `edit` opens the rename/delete dialog. The checkbox itself always toggles |
+
+### `show_header` (renamed from `show_title`)
+
+`show_title` only hid the `<h2>`, leaving the icon tile, subline and progress bar visible — not
+what "show header" suggests. Renamed to `show_header` and widened to hide the entire header block
+(icon tile, title, subline) plus the progress bar underneath it, regardless of `show_progress`. The
+card was still unreleased (no GitHub release published) when this changed, so `show_title` is a
+hard error in `resolveConfig` rather than a silent legacy alias — nothing shipped depended on the
+old name.
+
+**Viewer subline, decided:** the subline is also how a viewer learns a list is view-only ("N items ·
+view only"). Garrett decided (2026-09-15) that hiding the header hides that marker too, with no
+special case to keep it visible — the card is already fully non-interactive for a viewer (no add
+field, no toggling, no menus) regardless of `show_header`, so the text was reinforcing a state the
+UI already enforces, not the only signal of it. A config that says "hide the header" hides the whole
+header.
 
 ## Editor
 
@@ -246,7 +262,9 @@ falls back to native theme-styled controls otherwise, waiting on `customElements
 case `ha-form` hasn't loaded yet. Fields: entity (restricted to `todo.` entities carrying `list_id`,
 falling back to every `todo.` entity), title override, the five booleans, `collapse_to`, and
 `item_tap_action`. A hint under the entity picker notes the add field is always hidden for
-view-only lists regardless of `show_add`, once a viewer entity is selected.
+view-only lists regardless of `show_add`, once a viewer entity is selected. The `show_progress`
+control is disabled (`ha-form`'s `disabled` on the schema row; the native fallback path disables its
+own checkbox) while `show_header` is off, since the toggle would have no effect.
 
 Each edit fires `config-changed` (`{ config }`, bubbling and composed, matching stock editors).
 `fromFormData` (`src/editor.ts`) omits any key still at its default so the emitted YAML stays clean

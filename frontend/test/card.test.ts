@@ -474,3 +474,51 @@ describe("availability", () => {
     expect(hass.callWS.mock.calls.length).toBe(before);
   });
 });
+
+describe("show_header", () => {
+  it("hides the icon tile, title and subline when off", async () => {
+    const card = await mount(hass, { show_header: false }, [item("1", "Milk")]);
+    expect(root(card).querySelector("header.head")).toBeNull();
+    expect(root(card).querySelector(".tile")).toBeNull();
+    expect(root(card).querySelector(".title")).toBeNull();
+    expect(root(card).querySelector(".subline")).toBeNull();
+  });
+
+  it("shows the header block by default", async () => {
+    const card = await mount(hass, {}, [item("1", "Milk")]);
+    expect(root(card).querySelector("header.head")).not.toBeNull();
+    expect(root(card).querySelector(".title")).not.toBeNull();
+    expect(root(card).querySelector(".subline")).not.toBeNull();
+  });
+
+  it("forces the progress bar off when the header is off, even with show_progress: true", async () => {
+    const card = await mount(hass, { show_header: false, show_progress: true }, [item("1", "Milk")]);
+    expect(root(card).querySelector(".progress")).toBeNull();
+  });
+
+  it("still shows the progress bar with show_progress: true while the header is on", async () => {
+    const card = await mount(hass, { show_progress: true }, [item("1", "Milk")]);
+    expect(root(card).querySelector(".progress")).not.toBeNull();
+  });
+
+  it("still hides the progress bar with show_progress: false while the header is on", async () => {
+    const card = await mount(hass, { show_progress: false }, [item("1", "Milk")]);
+    expect(root(card).querySelector(".progress")).toBeNull();
+  });
+
+  it("drops the viewer 'view only' marker along with the rest of the header (Garrett decided 2026-09-15)", async () => {
+    hass.setEntity(ENTITY, "2", 0);
+    hass.states[ENTITY]!.attributes.role = "viewer";
+    const card = await mount(hass, { show_header: false }, [item("1", "Milk")]);
+    expect(root(card).querySelector(".add")).toBeNull();
+    expect(root(card).textContent).not.toContain("view only");
+    const checkbox = root(card).querySelector<HTMLInputElement>('input[type="checkbox"]');
+    expect(checkbox?.disabled).toBe(true);
+  });
+
+  it("keeps getCardSize accurate with the header (and its progress bar) off", async () => {
+    const withHeader = await mount(hass, {}, [item("1", "Milk")]);
+    const withoutHeader = await mount(hass, { show_header: false }, [item("1", "Milk")]);
+    expect(withoutHeader.getCardSize()).toBe(withHeader.getCardSize() - 2);
+  });
+});

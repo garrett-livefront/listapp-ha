@@ -75,10 +75,10 @@ above.
 | `entity` | *(required)* | The `todo.<entity_id>` entity to show — the default id is `todo.listapp_<list>`, but a renamed entity id works too. |
 | `title` | entity's friendly name | Overrides the card's title. |
 | `use_list_color` | `true` | `false` uses your theme's primary color as the accent instead of the list's own color. |
-| `show_title` | `true` | `false` hides the title text; the icon and item count stay. |
+| `show_header` | `true` | `false` hides the whole header block — icon tile, title and item count — and the progress bar with it. |
 | `show_add` | `true` | Shows the add-item field. Always hidden if you only have viewer access. |
 | `show_completed` | `true` | Shows the Completed section. |
-| `show_progress` | `true` | Shows the progress bar under the header. |
+| `show_progress` | `true` | Shows the progress bar under the header. Forced off along with the header when `show_header: false`. |
 | `collapse_to` | `0` (off) | Shows only this many active items, with a "Show N more" link for the rest. |
 | `item_tap_action` | `toggle` | `toggle` checks/unchecks an item on tap; `edit` opens rename/delete instead. The checkbox itself always toggles. |
 
