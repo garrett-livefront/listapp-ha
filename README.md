@@ -10,8 +10,8 @@
 A Home Assistant custom integration that links a ListApp account and exposes its lists as
 `todo` entities, updated live as they change.
 
-- Each selected ListApp list becomes a `todo.listapp_<list>` entity, so lists work with HA's
-  built-in to-do card, voice assistants, and automations.
+- Each selected ListApp list becomes its own `todo` entity named after the list, so lists work
+  with HA's built-in to-do card, voice assistants, and automations.
 - Updates arrive over a live stream; if it disconnects, the integration falls back to polling
   every 60 seconds until it reconnects.
 - Lists you only have viewer access to show up read-only.
@@ -62,7 +62,7 @@ hand instead:
 
 ```yaml
 type: custom:listapp-list-card
-entity: todo.listapp_groceries
+entity: todo.groceries
 title: Groceries
 item_tap_action: toggle
 ```
@@ -72,7 +72,7 @@ above.
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `entity` | *(required)* | The `todo.<entity_id>` entity to show — the default id is `todo.listapp_<list>`, but a renamed entity id works too. |
+| `entity` | *(required)* | The `todo.<entity_id>` entity to show — the default id is the list's own title (e.g. `todo.groceries`), but a renamed entity id works too. |
 | `title` | entity's friendly name | Overrides the card's title. |
 | `use_list_color` | `true` | `false` uses your theme's primary color as the accent instead of the list's own color. |
 | `show_header` | `true` | `false` hides the whole header block — icon tile, title and item count — and the progress bar with it. |

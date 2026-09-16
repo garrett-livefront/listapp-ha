@@ -10,7 +10,8 @@ To try the integration before it's on HACS:
 3. **Settings → Devices & services → Add integration → ListApp**, then sign in to ListApp in the
    browser window that opens.
 
-Each list you select in the picker shows up as a `todo.listapp_<list>` entity. **Configure** on the
+Each list you select in the picker shows up as its own `todo` entity named after the list.
+**Configure** on the
 integration lets you change which lists are selected, and offers read-only mode, which asks you to
 sign in again with narrower permissions.
 

@@ -14,7 +14,7 @@ say "ListApp" (Copilot review comment on PR #14).
 
 ## Attribute contract
 
-Each `todo.listapp_<list>` entity exposes on `extra_state_attributes`:
+Each list's `todo` entity exposes on `extra_state_attributes`:
 
 | Attribute | Type | Source |
 | --- | --- | --- |

@@ -3,9 +3,12 @@ from typing import Any
 
 from homeassistant.components.todo import DOMAIN as TODO_DOMAIN
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.device_registry import DeviceEntry
 
 from custom_components.listapp.const import DOMAIN
+from custom_components.listapp.todo import _get_device
 
 ACCOUNT_ID = "7de0c4b8-1111-4000-8000-000000000001"
 OTHER_ACCOUNT_ID = "7de0c4b8-2222-4000-8000-000000000002"
@@ -117,3 +120,7 @@ def groceries() -> dict:
 
 def todo_entity_id(hass: HomeAssistant, list_id: str) -> str | None:
     return er.async_get(hass).async_get_entity_id(TODO_DOMAIN, DOMAIN, f"{ACCOUNT_ID}_{list_id}")
+
+
+def list_device(hass: HomeAssistant, config_entry_id: str, list_id: str) -> DeviceEntry | None:
+    return _get_device(dr.async_get(hass), config_entry_id, (DOMAIN, f"{ACCOUNT_ID}_{list_id}"))
