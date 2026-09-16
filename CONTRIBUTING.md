@@ -47,16 +47,17 @@ Details, the coverage gate, and the supported-HA-version matrix: [`docs/testing.
 
 ## The card
 
-The Lovelace card's source is in `frontend/` (Lit + TypeScript); the built bundle at
-`custom_components/listapp/frontend/listapp-list-card.js` is committed, so **rebuild and commit it
-with any source change** — CI fails if the two drift.
+The Lovelace card's source is in `frontend/` (Lit + TypeScript); the build emits two files under
+`custom_components/listapp/frontend/` — a thin `listapp-list-card.js` entry and the
+`listapp-list-card-impl.js` chunk it lazy-loads. **Both are committed; rebuild and commit both with
+any source change** — CI fails if either drifts from the source.
 
 ```
 cd frontend
 npm ci
-npm run build                                   # → ../custom_components/listapp/frontend/listapp-list-card.js
+npm run build                                   # → ../custom_components/listapp/frontend/{listapp-list-card.js,listapp-list-card-impl.js}
 npm run lint && npm run typecheck && npm test
-npm run check:fresh                             # what CI runs: rebuild must match the committed file
+npm run check:fresh                             # what CI runs: rebuild must match both committed files
 npm run dev                                     # harness with a mock hass at http://127.0.0.1:8000/
 ```
 

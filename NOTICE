@@ -1,9 +1,10 @@
 Listapp for Home Assistant
 Copyright (c) 2026 Garrett Schafer
 
-This repository is licensed under the terms in LICENSE. The bundled Lovelace card
-(custom_components/listapp/frontend/listapp-list-card.js, built from frontend/) includes or
-adapts third-party work:
+This repository is licensed under the terms in LICENSE. The bundled Lovelace card ships as two
+built-from-frontend/ files, custom_components/listapp/frontend/listapp-list-card.js (a thin entry)
+and its listapp-list-card-impl.js implementation chunk; the third-party work below is bundled into
+the implementation chunk, not the entry:
 
 Home Assistant frontend — Apache License 2.0
   https://github.com/home-assistant/frontend
@@ -18,7 +19,7 @@ Home Assistant frontend — Apache License 2.0
 
 Lit — BSD 3-Clause License
   Copyright (c) 2017 Google LLC. https://github.com/lit/lit
-  Bundled in full into the card.
+  Bundled in full into listapp-list-card-impl.js.
 
   Redistribution and use in source and binary forms, with or without modification, are permitted
   provided that the following conditions are met:
