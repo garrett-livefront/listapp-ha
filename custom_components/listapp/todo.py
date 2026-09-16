@@ -37,6 +37,16 @@ def _device_identifier(account_id: str, list_id: str) -> tuple[str, str]:
     return (DOMAIN, f"{account_id}_{list_id}")
 
 
+def _get_device(
+    devices: dr.DeviceRegistry, entry_id: str, identifier: tuple[str, str]
+) -> dr.DeviceEntry | None:
+    # async_get_device_by_identifier doesn't exist on the min-supported HA (docs/testing.md),
+    # which only has the now-deprecated async_get_device.
+    if lookup := getattr(devices, "async_get_device_by_identifier", None):
+        return lookup(identifier, entry_id)
+    return devices.async_get_device(identifiers={identifier})
+
+
 WRITE_FEATURES = (
     TodoListEntityFeature.CREATE_TODO_ITEM
     | TodoListEntityFeature.UPDATE_TODO_ITEM
@@ -61,9 +71,7 @@ async def async_setup_entry(
     }
 
     # H3 moved from one account-level device to one device per list; clean up the orphan.
-    if legacy_device := devices.async_get_device_by_identifier(
-        (DOMAIN, coordinator.account_id), entry.entry_id
-    ):
+    if legacy_device := _get_device(devices, entry.entry_id, (DOMAIN, coordinator.account_id)):
         devices.async_remove_device(legacy_device.id)
 
     @callback
@@ -87,9 +95,8 @@ async def async_setup_entry(
             unique_id = f"{coordinator.account_id}_{list_id}"
             if entity_id := registry.async_get_entity_id(TODO_DOMAIN, DOMAIN, unique_id):
                 registry.async_remove(entity_id)
-            if device := devices.async_get_device_by_identifier(
-                _device_identifier(coordinator.account_id, list_id), entry.entry_id
-            ):
+            device_identifier = _device_identifier(coordinator.account_id, list_id)
+            if device := _get_device(devices, entry.entry_id, device_identifier):
                 devices.async_remove_device(device.id)
 
     sync_entities()
