@@ -1207,10 +1207,12 @@ export class ListAppListCard extends LitElement {
     }
     .section-head h3 {
       margin: 0;
-      font-size: 12px;
-      font-weight: 800;
-      letter-spacing: 1.2px;
-      text-transform: uppercase;
+      font-size: var(--ha-font-size-m, 14px);
+      font-weight: var(--ha-font-weight-medium, 500);
+      letter-spacing: normal;
+      color: var(--primary-text-color);
+    }
+    .section-head h3 .count {
       color: var(--la-muted);
     }
     .divider {

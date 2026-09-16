@@ -622,8 +622,13 @@ current names and are mapped in the script: the app's `home` is lucide's `house`
 
 Sizes, weights, letter-spacing, radii, padding and gaps in `listapp-list-card.ts`'s styles are the
 design's values verbatim (variant 1b "quiet rail", `HA Todo Card.dc.html` in the Claude Design
-project): 38 px tile with an 11 px radius, 5 px progress bar, 12 px/800 section labels at 1.2 px
-tracking, 13.5 px/700 "Show N more". Item text, the checkbox, the glyph, and the add field
+project): 38 px tile with an 11 px radius, 5 px progress bar, 13.5 px/700 "Show N more". The section
+labels (`Active`, `Completed`) are the one departure from the mock: they now match stock
+`hui-todo-list-card`'s `.header h2` — `--ha-font-size-m`/`--ha-font-weight-medium` (14 px/500), no
+letter-spacing override, sentence case, `--primary-text-color` — instead of the mock's 12 px/800
+uppercase eyebrow at 1.2 px tracking, per Garrett's feedback (2026-09-16) that the eyebrow looked out
+of place once the rest of the card was matched to stock. The trailing count (`· 7`) stays
+`--la-muted` so it recedes against the label. Item text, the checkbox, the glyph, and the add field
 deliberately match HA's stock look instead of the mock: item text is
 `--ha-font-size-m`/`--ha-font-weight-normal` (14 px/400, active and completed alike, not the mock's
 15.5 px/600–500), the checkbox is 20 px with `--ha-border-radius-sm` (4 px, not the mock's 22 px/7
