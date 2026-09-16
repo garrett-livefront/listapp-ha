@@ -6,6 +6,7 @@ import { isViewer } from "./model.js";
 import type { ItemTapAction, ListAppCardConfig } from "./config.js";
 
 import { EDITOR_IMPL_TAG, EDITOR_TAG } from "./tags.js";
+import { defineWithRetry } from "./register.js";
 
 export { EDITOR_TAG };
 
@@ -287,6 +288,6 @@ export class ListAppListCardEditor extends LitElement {
   `;
 }
 
-if (typeof customElements !== "undefined" && !customElements.get(EDITOR_IMPL_TAG)) {
-  customElements.define(EDITOR_IMPL_TAG, ListAppListCardEditor);
+if (typeof customElements !== "undefined") {
+  defineWithRetry(customElements, [[EDITOR_IMPL_TAG, ListAppListCardEditor]]);
 }

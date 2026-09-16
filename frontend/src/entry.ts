@@ -8,6 +8,7 @@ import {
   type ResolvedConfig,
 } from "./config.js";
 import { CARD_IMPL_TAG, EDITOR_IMPL_TAG, EDITOR_TAG } from "./tags.js";
+import { REGISTRATION_TIMEOUT_MS, defineWithRetry } from "./register.js";
 import type { HomeAssistant } from "./ha.js";
 
 declare const __IMPL_URL__: string;
@@ -80,9 +81,29 @@ class LazyHost extends HTMLElement {
       return;
     }
     void loadImpl().then(
-      () => this._mount(),
+      () => this._whenImplDefined().then(
+        () => this._mount(),
+        (err: unknown) => this._fail(err),
+      ),
       (err: unknown) => this._fail(err),
     );
+  }
+
+  // The chunk's own define can be swallowed too, and its retry chain may still be running —
+  // see docs/card.md#registry-patching
+  private _whenImplDefined(): Promise<unknown> {
+    if (customElements.get(this.implTag)) {
+      return Promise.resolve();
+    }
+    return Promise.race([
+      customElements.whenDefined(this.implTag),
+      new Promise((_resolve, reject) =>
+        setTimeout(
+          () => reject(new Error(`${this.implTag} was never defined`)),
+          REGISTRATION_TIMEOUT_MS,
+        ),
+      ),
+    ]);
   }
 
   private _mount(): void {
@@ -155,31 +176,7 @@ class ListAppListCardEditorEntry extends LazyHost {
   protected override readonly implTag = EDITOR_IMPL_TAG;
 }
 
-// Retries after each unverified define, and holds the picker entry back until the tag resolves —
-// see docs/card.md#registry-patching
-const RETRY_DELAYS_MS = [0, 100, 500];
-const REGISTRY_WARNING =
-  "listapp-list-card: customElements.define did not take. Something on this page is wrapping " +
-  "the custom element registry — a scoped custom element registry polyfill, or another frontend " +
-  'integration patching customElements. Listapp cards will show "Configuration error" until the ' +
-  "page is reloaded; see https://github.com/garrett-livefront/listapp-ha docs/card.md#registry-patching";
-
-function defineAndVerify(
-  registry: CustomElementRegistry,
-  tag: string,
-  ctor: CustomElementConstructor,
-): boolean {
-  if (registry.get(tag)) {
-    return true;
-  }
-  try {
-    registry.define(tag, ctor);
-  } catch {
-    // A concurrent definition of the same tag is a success, not a failure — the check below decides.
-  }
-  return registry.get(tag) !== undefined;
-}
-
+// Holds the picker entry back until both host tags resolve — see docs/card.md#registry-patching
 function advertiseToPicker(): void {
   const cards = (window.customCards ??= []);
   if (!cards.some((card) => card.type === CARD_TYPE)) {
@@ -192,24 +189,15 @@ function advertiseToPicker(): void {
   }
 }
 
-export function registerCardElements(registry: CustomElementRegistry, attempt = 0): void {
-  const card = defineAndVerify(registry, CARD_TYPE, ListAppListCardEntry);
-  const editor = defineAndVerify(registry, EDITOR_TAG, ListAppListCardEditorEntry);
-  if (card) {
-    advertiseToPicker();
-  }
-  if (card && editor) {
-    return;
-  }
-  if (attempt > RETRY_DELAYS_MS.length) {
-    console.warn(REGISTRY_WARNING);
-    return;
-  }
-  if (attempt === 0) {
-    queueMicrotask(() => registerCardElements(registry, 1));
-    return;
-  }
-  setTimeout(() => registerCardElements(registry, attempt + 1), RETRY_DELAYS_MS[attempt - 1]);
+export function registerCardElements(registry: CustomElementRegistry): void {
+  defineWithRetry(
+    registry,
+    [
+      [CARD_TYPE, ListAppListCardEntry],
+      [EDITOR_TAG, ListAppListCardEditorEntry],
+    ],
+    { onAllResolved: advertiseToPicker },
+  );
 }
 
 registerCardElements(customElements);

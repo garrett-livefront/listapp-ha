@@ -208,7 +208,10 @@ on Garrett's instance on 2026-09-15, in the failed state, which rules the deadli
 - The tag was genuinely free: `customElements.define('listapp-list-card', class extends HTMLElement
   {})` succeeded by hand in that state.
 - `await import('/listapp_frontend/listapp-list-card.js?probe=<ts>')` on the same page then defined
-  all three tags immediately.
+  all three tags immediately. The entry itself only registers the two host tags; the third
+  (`listapp-list-card-impl`) followed a moment later, because the re-imported entry's hosts mounted
+  and pulled in the implementation chunk, which registers it. Both defines took on the retry — the
+  point of the observation is that nothing about the page had changed but the timing.
 - The registry was patched: `Function.prototype.toString.call(customElements.define)` and `.get` were
   both non-native, `Object.getPrototypeOf(customElements).constructor.name` was `"x"` (minified), and
   `Element.prototype.attachShadow` was patched too — though `customElements instanceof
@@ -236,7 +239,21 @@ re-measure all of the above. The delays are short because the re-import probe de
 instantly: the patch's window is transient, not permanent, so spacing attempts out further buys
 nothing and risks landing after HA has already rendered the error card.
 
-`window.customCards` is only pushed **once `listapp-list-card` actually resolves**. Advertising the
+The same guard covers the **implementation** tags. `listapp-list-card-impl` and
+`listapp-list-card-editor-impl` are registered by the lazily imported chunk, long after the entry
+ran, so a wrapper still swallowing calls at that moment would leave the host mounting an
+`HTMLUnknownElement` and calling `setConfig` on it — the guarded entry would report success and the
+card would still break. `src/register.ts` holds the shared retry, and all four defines go through
+it. The host also waits for its implementation tag (`whenDefined`, bounded by the retry chain's own
+2 s) before mounting, so a define that only takes on the third attempt still yields a working card
+rather than a dead one; past the bound it shows the same readable notice as a failed chunk load.
+The warning is module state, so each bundle warns at most once however many tags were swallowed.
+*(Both were Copilot review comments on PR #27.)*
+
+`window.customCards` is only pushed **once both `listapp-list-card` and `listapp-list-card-editor`
+resolve** — a card advertised with no editor is configurable from the picker only into an error.
+Originally it was pushed once the card tag alone resolved; Copilot's review of PR #27 pointed out the
+editor half, and the stricter gate matches the trade already chosen here. Advertising the
 card to the picker while no element exists is precisely what turned a silent failure into HA's
 context-free "Configuration error" — the card appeared installed and every dashboard using it broke.
 An unlisted card is the better failure: the console warning explains it, and a reload fixes it.

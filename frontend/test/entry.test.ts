@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CARD_TYPE } from "../src/config.js";
 import { CARD_IMPL_TAG, EDITOR_IMPL_TAG, EDITOR_TAG } from "../src/tags.js";
 import { loadImpl, registerCardElements, setImplLoader } from "../src/entry.js";
+import { defineWithRetry, resetRegistrationWarning } from "../src/register.js";
 
 const VALID = { type: `custom:${CARD_TYPE}`, entity: "todo.groceries" };
 
@@ -84,6 +85,8 @@ describe("registration against a misbehaving registry", () => {
     saved = window.customCards;
     window.customCards = [];
     warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // The one-warning budget is module state in register.ts, so it outlives a single test.
+    resetRegistrationWarning();
     vi.useFakeTimers();
   });
 
@@ -140,6 +143,51 @@ describe("registration against a misbehaving registry", () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(pickerEntries()).toHaveLength(0);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("withholds the picker entry when only the card tag resolves", async () => {
+    // Accepts the card definition, drops every editor one: the picker entry would otherwise
+    // advertise a card whose editor cannot be created.
+    class EditorHostileRegistry extends FakeRegistry {
+      override define(tag: string, ctor: CustomElementConstructor): void {
+        this.defineCalls += 1;
+        if (tag !== EDITOR_TAG) {
+          this.defined.set(tag, ctor);
+        }
+      }
+    }
+    const registry = new EditorHostileRegistry();
+    registerCardElements(asRegistry(registry));
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(registry.get(CARD_TYPE)).toBeTruthy();
+    expect(registry.get(EDITOR_TAG)).toBeFalsy();
+    expect(pickerEntries()).toHaveLength(0);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a swallowed implementation-tag define and never re-defines a resolved tag", async () => {
+    const registry = new FakeRegistry(3);
+    defineWithRetry(asRegistry(registry), [[CARD_IMPL_TAG, StubImpl]]);
+    expect(registry.get(CARD_IMPL_TAG)).toBeFalsy();
+
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(registry.get(CARD_IMPL_TAG)).toBeTruthy();
+    expect(registry.defineCalls).toBe(3);
+    expect(warn).not.toHaveBeenCalled();
+
+    // A further chain over the same tag must short-circuit rather than define it twice.
+    defineWithRetry(asRegistry(registry), [[CARD_IMPL_TAG, StubImpl]]);
+    expect(registry.defineCalls).toBe(3);
+  });
+
+  it("warns only once no matter how many tags are swallowed", async () => {
+    const registry = new FakeRegistry(0);
+    defineWithRetry(asRegistry(registry), [[CARD_IMPL_TAG, StubImpl]]);
+    defineWithRetry(asRegistry(registry), [[EDITOR_IMPL_TAG, StubEditorImpl]]);
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });
 
