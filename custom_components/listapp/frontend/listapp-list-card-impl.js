@@ -356,18 +356,18 @@ var Ve=Object.defineProperty;var ze=Object.getOwnPropertyDescriptor;var v=(s,e,t
     }
     .title {
       margin: 0;
-      font-size: var(--ha-card-header-font-size, var(--ha-font-size-2xl, 1.5rem));
+      font-size: var(--ha-font-size-xl, 20px);
       font-weight: var(--ha-font-weight-normal, 400);
-      letter-spacing: -0.012em;
-      line-height: 1.25;
+      line-height: var(--ha-line-height-condensed, 1.2);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
     .subline {
-      margin: 1px 0 0;
-      font-size: var(--ha-font-size-m, 14px);
+      margin: 3px 0 0;
+      font-size: var(--ha-font-size-s, 12px);
       font-weight: var(--ha-font-weight-normal, 400);
+      line-height: var(--ha-line-height-condensed, 1.2);
       color: var(--la-muted);
     }
 

@@ -623,8 +623,7 @@ current names and are mapped in the script: the app's `home` is lucide's `house`
 Sizes, weights, letter-spacing, radii, padding and gaps in `listapp-list-card.ts`'s styles are the
 design's values verbatim (variant 1b "quiet rail", `HA Todo Card.dc.html` in the Claude Design
 project): 38 px tile with an 11 px radius, 5 px progress bar, 12 px/800 section labels at 1.2 px
-tracking, 13.5 px/700 "Show N more". Item text, the checkbox, the glyph, the add field, and the
-title/subline typography
+tracking, 13.5 px/700 "Show N more". Item text, the checkbox, the glyph, and the add field
 deliberately match HA's stock look instead of the mock: item text is
 `--ha-font-size-m`/`--ha-font-weight-normal` (14 px/400, active and completed alike, not the mock's
 15.5 px/600–500), the checkbox is 20 px with `--ha-border-radius-sm` (4 px, not the mock's 22 px/7
@@ -634,14 +633,20 @@ adjustments in the same direction: the unchecked checkbox border now uses
 `--ha-color-border-neutral-normal` (falling back to `--la-muted`/`--secondary-text-color`) instead
 of `--la-muted` directly — stock `ha-checkbox` uses that dedicated neutral-border token, which in
 HA's dark theme resolves noticeably dimmer than `--secondary-text-color`, which is what was making
-ours read too bright; the border width was already 2 px like stock and did not change. The title
-moved from the mock's fixed 17.5 px/800 at −0.2 px tracking to HA's own card-header treatment —
-`--ha-card-header-font-size` (falling back to `--ha-font-size-2xl`), `--ha-font-weight-normal`, and
-stock's −0.012em letter-spacing — matching `ha-card`'s own `<h1 class="card-header">` styling; this
-was matched against HA's stock card header rather than Garrett's own "Recent Automation Activity"
-card, whose source wasn't available to check directly. The subline kept its colour
-(`--la-muted`) but moved from the mock's fixed 12.5 px/600 to match the item text's typography,
-`--ha-font-size-m`/`--ha-font-weight-normal` (14 px/400). The add field moved from its previous filled block with 13 px/14 px padding, 15.5 px/500 text, and
+ours read too bright; the border width was already 2 px like stock and did not change.
+
+The title and subline block takes its **proportions** from the Listapp mobile app's list row (sized
+to roughly match the height of the 38 px icon tile beside it) but its **typography** from Home
+Assistant — normal weight, HA's own font-size and line-height tokens — rather than from either the
+mock or from `ha-card`'s own header. Garrett decided this (2026-09-16) after comparing the card
+against a stock to-do card and the mobile app side by side: `ha-card`'s `<h1 class="card-header">`
+is 24 px/400 with −0.012em letter-spacing and a 2 line-height, and was deliberately *not* reused
+here, because a 24 px heading plus a subline cannot sit inside a 38 px tile's height. Size is the
+dial, not weight — the block uses `--ha-font-size-xl` (20 px) for the title and `--ha-font-size-s`
+(12 px) for the subline, both `--ha-font-weight-normal` (400) and `--ha-line-height-condensed`
+(1.2), no letter-spacing override. That's `24 + 3 + 14.4 ≈ 41px` against the 38 px tile — the
+closest fit available from HA's own scale. The subline kept its colour (`--la-muted`). The add
+field moved from its previous filled block with 13 px/14 px padding, 15.5 px/500 text, and
 a 10 px radius on the top corners only to stock's size and shape: `hui-todo-list-card`'s add row is an `ha-input` whose default (material) appearance
 is 56 px tall with `0 var(--ha-space-4)` (16 px) padding and 14 px/400 text
 (`--ha-font-size-m`/`--ha-font-weight-normal`, same as item text), and its filled part is rounded
