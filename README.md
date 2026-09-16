@@ -72,7 +72,7 @@ above.
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `entity` | *(required)* | The `todo.listapp_*` entity to show. |
+| `entity` | *(required)* | The `todo.<entity_id>` entity to show — the default id is `todo.listapp_<list>`, but a renamed entity id works too. |
 | `title` | entity's friendly name | Overrides the card's title. |
 | `use_list_color` | `true` | `false` uses your theme's primary color as the accent instead of the list's own color. |
 | `show_title` | `true` | `false` hides the title text; the icon and item count stay. |

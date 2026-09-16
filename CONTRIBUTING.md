@@ -66,7 +66,7 @@ Architecture, options, states, the colour/icon rules and licences: [`docs/card.m
 `frontend/scripts/capture-screenshots.mjs` drives the dev harness with headless Chrome over CDP and
 writes light/dark PNGs to `docs/images/`, used by the README's Dashboard card section. It needs the
 dev server running (`npm run dev`) and a local Chrome (`CHROME_PATH` to override the default macOS
-path):
+path). `npm run dev` picks a different port if 8000 is taken — set `HARNESS_URL` to match if so:
 
 ```
 cd frontend
