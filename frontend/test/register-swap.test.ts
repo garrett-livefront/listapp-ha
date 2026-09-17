@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // HA's app bundle replaces window.customElements with its scoped-registry polyfill; a define that
 // landed on the original registry must be repeated on the replacement — see docs/card.md#registry-patching
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineWithSwapGuard } from "../src/register.js";
 
 class FakeRegistry {
@@ -35,8 +35,12 @@ const microtasks = () => new Promise((resolve) => queueMicrotask(() => resolve(u
 
 describe("defineWithSwapGuard", () => {
   const original = window.customElements;
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
   afterEach(() => {
     install(original as unknown as FakeRegistry);
+    vi.clearAllTimers();
     vi.useRealTimers();
   });
 
@@ -63,7 +67,6 @@ describe("defineWithSwapGuard", () => {
   });
 
   it("catches a swap by polling even if <home-assistant> never defines", async () => {
-    vi.useFakeTimers();
     const before = new FakeRegistry();
     install(before);
     class Card extends HTMLElement {}
@@ -76,7 +79,6 @@ describe("defineWithSwapGuard", () => {
   });
 
   it("does nothing when the registry is never replaced, and stops polling", async () => {
-    vi.useFakeTimers();
     const only = new FakeRegistry();
     install(only);
     const define = vi.spyOn(only, "define");
