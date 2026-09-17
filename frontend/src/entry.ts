@@ -8,7 +8,7 @@ import {
   type ResolvedConfig,
 } from "./config.js";
 import { CARD_IMPL_TAG, EDITOR_IMPL_TAG, EDITOR_TAG } from "./tags.js";
-import { REGISTRATION_TIMEOUT_MS, defineWithRetry } from "./register.js";
+import { REGISTRATION_TIMEOUT_MS, defineWithRetry, defineWithSwapGuard } from "./register.js";
 import type { HomeAssistant } from "./ha.js";
 
 declare const __IMPL_URL__: string;
@@ -189,15 +189,15 @@ function advertiseToPicker(): void {
   }
 }
 
+const HOST_ENTRIES = [
+  [CARD_TYPE, ListAppListCardEntry],
+  [EDITOR_TAG, ListAppListCardEditorEntry],
+] as const;
+
 export function registerCardElements(registry: CustomElementRegistry): void {
-  defineWithRetry(
-    registry,
-    [
-      [CARD_TYPE, ListAppListCardEntry],
-      [EDITOR_TAG, ListAppListCardEditorEntry],
-    ],
-    { onAllResolved: advertiseToPicker },
-  );
+  defineWithRetry(registry, HOST_ENTRIES, { onAllResolved: advertiseToPicker });
 }
 
-registerCardElements(customElements);
+// Not registerCardElements(customElements): the registry HA looks in may not exist yet — see
+// docs/card.md#registry-swap
+defineWithSwapGuard(HOST_ENTRIES, { onAllResolved: advertiseToPicker });

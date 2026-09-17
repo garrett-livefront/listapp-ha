@@ -8,7 +8,7 @@ import { buildPalette, HA_PRIMARY_FALLBACK, resolveListColor, type Palette } fro
 import { resolveConfig, stubConfig, type ListAppCardConfig, type ResolvedConfig } from "./config.js";
 import "./editor.js";
 import { CARD_IMPL_TAG, EDITOR_TAG } from "./tags.js";
-import { defineWithRetry } from "./register.js";
+import { defineWithSwapGuard } from "./register.js";
 import {
   createItem,
   deleteItems,
@@ -1557,4 +1557,4 @@ export class ListAppListCard extends LitElement {
   `;
 }
 
-defineWithRetry(customElements, [[CARD_IMPL_TAG, ListAppListCard]]);
+defineWithSwapGuard([[CARD_IMPL_TAG, ListAppListCard]]);
