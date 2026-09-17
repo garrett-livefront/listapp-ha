@@ -1,98 +1,46 @@
-// A wrapped registry can swallow define() silently — verify with get() and retry.
-// See docs/card.md#registry-patching
-const RETRY_DELAYS_MS = [0, 100, 500];
+// Custom element registration that survives HA replacing window.customElements — see
+// docs/card.md#registry-patching
 
-const WARNING =
-  "listapp-list-card: customElements.define did not take. Something on this page is wrapping " +
-  "the custom element registry — a scoped custom element registry polyfill, or another frontend " +
-  'integration patching customElements. Listapp cards will show "Configuration error" until the ' +
-  "page is reloaded; see " +
-  "https://github.com/garrett-livefront/listapp-ha/blob/main/docs/card.md#registry-patching";
-
-// How long a host waits for its implementation tag. Independent of, and deliberately longer than,
-// the retry chain itself (~600 ms): the chunk's chain may start well after the host began waiting.
+// How long a host waits for its lazily loaded implementation tag before showing the load notice.
 export const REGISTRATION_TIMEOUT_MS = 2000;
 
-let warned = false;
-
-export function warnRegistryWrapped(): void {
-  if (warned) {
-    return;
-  }
-  warned = true;
-  console.warn(WARNING);
-}
-
-// Exported for tests, which need each case to start from a clean single-warning budget.
-export function resetRegistrationWarning(): void {
-  warned = false;
-}
-
-function defineVerified(
-  registry: CustomElementRegistry,
-  tag: string,
-  ctor: CustomElementConstructor,
-): boolean {
-  if (registry.get(tag)) {
-    return true;
-  }
-  try {
-    registry.define(tag, ctor);
-  } catch {
-    // A concurrent definition of the same tag is a success, not a failure — the check below decides.
-  }
-  return registry.get(tag) !== undefined;
-}
-
-export interface RegisterOptions {
-  onAllResolved?: () => void;
-  onExhausted?: () => void;
-}
-
-export function defineWithRetry(
-  registry: CustomElementRegistry,
-  entries: readonly (readonly [string, CustomElementConstructor])[],
-  options: RegisterOptions = {},
-  attempt = 0,
-): void {
-  // map, not every: every short-circuits, which would leave the second tag unattempted for as
-  // long as the first keeps failing. Already-resolved tags short-circuit inside defineVerified,
-  // so a retry never re-defines one.
-  const results = entries.map(([tag, ctor]) => defineVerified(registry, tag, ctor));
-  if (results.every(Boolean)) {
-    options.onAllResolved?.();
-    return;
-  }
-  if (attempt > RETRY_DELAYS_MS.length) {
-    (options.onExhausted ?? warnRegistryWrapped)();
-    return;
-  }
-  if (attempt === 0) {
-    queueMicrotask(() => defineWithRetry(registry, entries, options, 1));
-    return;
-  }
-  setTimeout(
-    () => defineWithRetry(registry, entries, options, attempt + 1),
-    RETRY_DELAYS_MS[attempt - 1],
-  );
-}
-
-// HA's app bundle installs @webcomponents/scoped-custom-element-registry as its first import,
-// which REPLACES window.customElements with a new, empty registry (it never copies native
-// definitions across). index.html dynamic-imports HA's own bundles and every add_extra_js_url
-// module concurrently, so this small entry can evaluate before that swap; a define that landed on
-// the native registry is then invisible to the replacement's get()/whenDefined(), which is exactly
-// what create-element-base.ts consults before showing "Configuration error". Define on whatever
-// registry is current now, and define again on the replacement if one appears.
+// Fallback poll for a swap not signalled by <home-assistant> — see docs/card.md#registry-patching
 const SWAP_POLL_MS = 250;
 const SWAP_POLL_LIMIT_MS = 30_000;
 
-export function defineWithSwapGuard(
-  entries: readonly (readonly [string, CustomElementConstructor])[],
+export type RegistryEntries = readonly (readonly [string, CustomElementConstructor])[];
+
+export interface RegisterOptions {
+  onAllResolved?: () => void;
+}
+
+// Idempotent: a define that throws because the tag already landed counts as success.
+export function defineAll(
+  registry: CustomElementRegistry,
+  entries: RegistryEntries,
   options: RegisterOptions = {},
-): void {
+): boolean {
+  for (const [tag, ctor] of entries) {
+    if (registry.get(tag)) {
+      continue;
+    }
+    try {
+      registry.define(tag, ctor);
+    } catch {
+      // Defined concurrently by another copy of this bundle — the check below decides.
+    }
+  }
+  const all = entries.every(([tag]) => registry.get(tag) !== undefined);
+  if (all) {
+    options.onAllResolved?.();
+  }
+  return all;
+}
+
+// HA's app.js replaces window.customElements after we may have defined — see docs/card.md#registry-patching
+export function defineWithSwapGuard(entries: RegistryEntries, options: RegisterOptions = {}): void {
   let registry = window.customElements;
-  defineWithRetry(registry, entries, options);
+  defineAll(registry, entries, options);
 
   const redefineIfSwapped = (): boolean => {
     const current = window.customElements;
@@ -100,16 +48,13 @@ export function defineWithSwapGuard(
       return false;
     }
     registry = current;
-    defineWithRetry(current, entries, options);
+    defineAll(current, entries, options);
     return true;
   };
 
-  // <home-assistant> is defined by the same bundle, right after the polyfill installs. On the
-  // native registry this resolves when the polyfill registers its stand-in for the tag; on the
-  // polyfilled one, when HA defines it. Either way: HA's app has evaluated, the registry is final.
+  // Resolves once HA's app has evaluated, so the registry is final — see docs/card.md#registry-patching
   void registry.whenDefined("home-assistant").then(redefineIfSwapped);
 
-  // Belt and braces that doesn't depend on HA's root tag name.
   const started = Date.now();
   const poll = (): void => {
     if (redefineIfSwapped() || Date.now() - started > SWAP_POLL_LIMIT_MS) {

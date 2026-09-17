@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CARD_TYPE } from "../src/config.js";
 import { CARD_IMPL_TAG, EDITOR_IMPL_TAG, EDITOR_TAG } from "../src/tags.js";
 import { loadImpl, registerCardElements, setImplLoader } from "../src/entry.js";
-import { defineWithRetry, resetRegistrationWarning } from "../src/register.js";
+import { defineAll } from "../src/register.js";
 
 const VALID = { type: `custom:${CARD_TYPE}`, entity: "todo.groceries" };
 
@@ -58,20 +58,18 @@ describe("entry module registration", () => {
   });
 });
 
-describe("registration against a misbehaving registry", () => {
-  // Stands in for a registry another integration has patched — see docs/card.md#registry-patching
+describe("registration is idempotent", () => {
+  // A registry of the test's own, so the entry's module-level registration on the real one
+  // doesn't interfere — see docs/card.md#registry-patching
   class FakeRegistry {
     readonly defined = new Map<string, CustomElementConstructor>();
     defineCalls = 0;
-    constructor(private readonly takesFrom = 1) {}
     get(tag: string): CustomElementConstructor | undefined {
       return this.defined.get(tag);
     }
     define(tag: string, ctor: CustomElementConstructor): void {
       this.defineCalls += 1;
-      if (this.takesFrom > 0 && this.defineCalls >= this.takesFrom) {
-        this.defined.set(tag, ctor);
-      }
+      this.defined.set(tag, ctor);
     }
   }
 
@@ -79,115 +77,71 @@ describe("registration against a misbehaving registry", () => {
   const pickerEntries = () => window.customCards?.filter((c) => c.type === CARD_TYPE) ?? [];
 
   let saved: typeof window.customCards;
-  let warn: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     saved = window.customCards;
     window.customCards = [];
-    warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    // The one-warning budget is module state in register.ts, so it outlives a single test.
-    resetRegistrationWarning();
-    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    vi.useRealTimers();
-    warn.mockRestore();
     window.customCards = saved;
   });
 
-  it("defines both tags on the first attempt when the registry behaves", () => {
+  it("defines both tags and advertises the card once", () => {
     const registry = new FakeRegistry();
-    registerCardElements(asRegistry(registry));
+    expect(registerCardElements(asRegistry(registry))).toBe(true);
 
     expect(registry.get(CARD_TYPE)).toBeTruthy();
     expect(registry.get(EDITOR_TAG)).toBeTruthy();
     expect(registry.defineCalls).toBe(2);
     expect(pickerEntries()).toHaveLength(1);
-    expect(warn).not.toHaveBeenCalled();
   });
 
-  it("retries and withholds the picker entry while define silently does nothing", async () => {
-    const registry = new FakeRegistry(0);
+  it("leaves tags the registry already has alone, and never advertises twice", () => {
+    const registry = new FakeRegistry();
+    registerCardElements(asRegistry(registry));
     registerCardElements(asRegistry(registry));
 
-    expect(pickerEntries()).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(registry.defineCalls).toBeGreaterThan(2);
-    expect(pickerEntries()).toHaveLength(0);
-
-    await vi.advanceTimersByTimeAsync(2000);
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0]?.[0]).toMatch(/customElements\.define did not take/);
-    expect(pickerEntries()).toHaveLength(0);
-  });
-
-  it("defines and advertises exactly once when a later attempt succeeds", async () => {
-    const registry = new FakeRegistry(3);
-    registerCardElements(asRegistry(registry));
-    expect(pickerEntries()).toHaveLength(0);
-
-    await vi.advanceTimersByTimeAsync(2000);
-    expect(registry.get(CARD_TYPE)).toBeTruthy();
-    expect(registry.get(EDITOR_TAG)).toBeTruthy();
+    expect(registry.defineCalls).toBe(2);
     expect(pickerEntries()).toHaveLength(1);
-    expect(warn).not.toHaveBeenCalled();
   });
 
-  it("gives up after a bounded number of attempts with a single warning", async () => {
-    const registry = new FakeRegistry(0);
-    registerCardElements(asRegistry(registry));
-    await vi.advanceTimersByTimeAsync(10_000);
-
-    expect(registry.defineCalls).toBe(10);
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(pickerEntries()).toHaveLength(0);
-    expect(vi.getTimerCount()).toBe(0);
+  it("treats a define that throws because the tag landed meanwhile as success", () => {
+    // Two copies of the bundle on one page (a Lovelace resource added by hand next to the
+    // integration's own) race on the same tags.
+    class RacingRegistry extends FakeRegistry {
+      override define(tag: string, ctor: CustomElementConstructor): void {
+        super.define(tag, ctor);
+        throw new DOMException(`the name "${tag}" has already been used with this registry`);
+      }
+    }
+    const registry = new RacingRegistry();
+    expect(registerCardElements(asRegistry(registry))).toBe(true);
+    expect(pickerEntries()).toHaveLength(1);
   });
 
-  it("withholds the picker entry when only the card tag resolves", async () => {
-    // Accepts the card definition, drops every editor one: the picker entry would otherwise
-    // advertise a card whose editor cannot be created.
+  it("withholds the picker entry while either tag is missing", () => {
+    // The picker entry would otherwise advertise a card whose editor cannot be created.
     class EditorHostileRegistry extends FakeRegistry {
       override define(tag: string, ctor: CustomElementConstructor): void {
-        this.defineCalls += 1;
         if (tag !== EDITOR_TAG) {
-          this.defined.set(tag, ctor);
+          super.define(tag, ctor);
         }
       }
     }
     const registry = new EditorHostileRegistry();
-    registerCardElements(asRegistry(registry));
-    await vi.advanceTimersByTimeAsync(10_000);
+    expect(registerCardElements(asRegistry(registry))).toBe(false);
 
     expect(registry.get(CARD_TYPE)).toBeTruthy();
     expect(registry.get(EDITOR_TAG)).toBeFalsy();
     expect(pickerEntries()).toHaveLength(0);
-    expect(warn).toHaveBeenCalledTimes(1);
   });
 
-  it("retries a swallowed implementation-tag define and never re-defines a resolved tag", async () => {
-    const registry = new FakeRegistry(3);
-    defineWithRetry(asRegistry(registry), [[CARD_IMPL_TAG, StubImpl]]);
-    expect(registry.get(CARD_IMPL_TAG)).toBeFalsy();
-
-    await vi.advanceTimersByTimeAsync(2000);
-    expect(registry.get(CARD_IMPL_TAG)).toBeTruthy();
-    expect(registry.defineCalls).toBe(3);
-    expect(warn).not.toHaveBeenCalled();
-
-    // A further chain over the same tag must short-circuit rather than define it twice.
-    defineWithRetry(asRegistry(registry), [[CARD_IMPL_TAG, StubImpl]]);
-    expect(registry.defineCalls).toBe(3);
-  });
-
-  it("warns only once no matter how many tags are swallowed", async () => {
-    const registry = new FakeRegistry(0);
-    defineWithRetry(asRegistry(registry), [[CARD_IMPL_TAG, StubImpl]]);
-    defineWithRetry(asRegistry(registry), [[EDITOR_IMPL_TAG, StubEditorImpl]]);
-    await vi.advanceTimersByTimeAsync(10_000);
-
-    expect(warn).toHaveBeenCalledTimes(1);
+  it("defineAll short-circuits a tag that is already defined", () => {
+    const registry = new FakeRegistry();
+    defineAll(asRegistry(registry), [[CARD_IMPL_TAG, StubImpl]]);
+    defineAll(asRegistry(registry), [[CARD_IMPL_TAG, StubImpl]]);
+    expect(registry.defineCalls).toBe(1);
   });
 });
 

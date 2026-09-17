@@ -8,7 +8,12 @@ import {
   type ResolvedConfig,
 } from "./config.js";
 import { CARD_IMPL_TAG, EDITOR_IMPL_TAG, EDITOR_TAG } from "./tags.js";
-import { REGISTRATION_TIMEOUT_MS, defineWithRetry, defineWithSwapGuard } from "./register.js";
+import {
+  REGISTRATION_TIMEOUT_MS,
+  defineAll,
+  defineWithSwapGuard,
+  type RegistryEntries,
+} from "./register.js";
 import type { HomeAssistant } from "./ha.js";
 
 declare const __IMPL_URL__: string;
@@ -89,14 +94,14 @@ class LazyHost extends HTMLElement {
     );
   }
 
-  // The chunk's own define can be swallowed too, and its retry chain may still be running —
-  // see docs/card.md#registry-patching
+  // The current window.customElements, not a captured one — see docs/card.md#registry-patching
   private _whenImplDefined(): Promise<unknown> {
-    if (customElements.get(this.implTag)) {
+    const registry = window.customElements;
+    if (registry.get(this.implTag)) {
       return Promise.resolve();
     }
     return Promise.race([
-      customElements.whenDefined(this.implTag),
+      registry.whenDefined(this.implTag),
       new Promise((_resolve, reject) =>
         setTimeout(
           () => reject(new Error(`${this.implTag} was never defined`)),
@@ -176,7 +181,8 @@ class ListAppListCardEditorEntry extends LazyHost {
   protected override readonly implTag = EDITOR_IMPL_TAG;
 }
 
-// Holds the picker entry back until both host tags resolve — see docs/card.md#registry-patching
+// Only once both host tags are defined: a card advertised without its element renders as HA's
+// context-free "Configuration error" — see docs/card.md#registry-patching
 function advertiseToPicker(): void {
   const cards = (window.customCards ??= []);
   if (!cards.some((card) => card.type === CARD_TYPE)) {
@@ -189,15 +195,16 @@ function advertiseToPicker(): void {
   }
 }
 
-const HOST_ENTRIES = [
+const HOST_ENTRIES: RegistryEntries = [
   [CARD_TYPE, ListAppListCardEntry],
   [EDITOR_TAG, ListAppListCardEditorEntry],
-] as const;
+];
 
-export function registerCardElements(registry: CustomElementRegistry): void {
-  defineWithRetry(registry, HOST_ENTRIES, { onAllResolved: advertiseToPicker });
+// Exported for tests, which drive registration against a registry of their own.
+export function registerCardElements(registry: CustomElementRegistry): boolean {
+  return defineAll(registry, HOST_ENTRIES, { onAllResolved: advertiseToPicker });
 }
 
-// Not registerCardElements(customElements): the registry HA looks in may not exist yet — see
-// docs/card.md#registry-swap
+// Not registerCardElements(customElements): the registry HA will look in may not exist yet — see
+// docs/card.md#registry-patching
 defineWithSwapGuard(HOST_ENTRIES, { onAllResolved: advertiseToPicker });

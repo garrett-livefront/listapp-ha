@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // HA's app bundle replaces window.customElements with its scoped-registry polyfill; a define that
-// landed on the original registry must be repeated on the replacement — see docs/card.md#registry-swap
+// landed on the original registry must be repeated on the replacement — see docs/card.md#registry-patching
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defineWithSwapGuard } from "../src/register.js";
 
@@ -75,16 +75,38 @@ describe("defineWithSwapGuard", () => {
     expect(after.get("swap-poll-card")).toBe(Card);
   });
 
-  it("does nothing when the registry is never replaced", async () => {
+  it("does nothing when the registry is never replaced, and stops polling", async () => {
     vi.useFakeTimers();
     const only = new FakeRegistry();
     install(only);
     const define = vi.spyOn(only, "define");
     class Card extends HTMLElement {}
-    defineWithSwapGuard([["swap-stable-card", Card]]);
+    const resolved = vi.fn();
+    defineWithSwapGuard([["swap-stable-card", Card]], { onAllResolved: resolved });
     only.define("home-assistant", class extends HTMLElement {});
     await vi.advanceTimersByTimeAsync(31_000);
     expect(define.mock.calls.filter(([tag]) => tag === "swap-stable-card")).toHaveLength(1);
+    expect(resolved).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("only re-defines what the replacement is missing", async () => {
+    const before = new FakeRegistry();
+    install(before);
+    class Card extends HTMLElement {}
+    class Editor extends HTMLElement {}
+    defineWithSwapGuard([["swap-partial-card", Card], ["swap-partial-editor", Editor]]);
+
+    const after = new FakeRegistry();
+    after.define("swap-partial-card", Card);
+    install(after);
+    const define = vi.spyOn(after, "define");
+    after.define("home-assistant", class extends HTMLElement {});
+    before.define("home-assistant", class extends HTMLElement {});
+    await microtasks();
+
+    expect(define.mock.calls.map(([tag]) => tag)).toEqual(["home-assistant", "swap-partial-editor"]);
+    expect(after.get("swap-partial-card")).toBe(Card);
+    expect(after.get("swap-partial-editor")).toBe(Editor);
   });
 });
