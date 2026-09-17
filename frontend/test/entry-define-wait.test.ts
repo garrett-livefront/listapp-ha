@@ -25,18 +25,23 @@ const mount = (tag: string): Host => {
   return el;
 };
 
-describe("waiting for a guarded implementation tag", () => {
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe("waiting for the implementation tag", () => {
+  const original = window.customElements;
+
   afterEach(() => {
+    Object.defineProperty(window, "customElements", { value: original, configurable: true, writable: true });
     document.body.replaceChildren();
     setImplLoader(undefined);
   });
 
-  it("holds off mounting until the chunk's own retried define takes", async () => {
-    // The chunk resolved, but its defineWithRetry has not landed the tag yet.
+  it("holds off mounting until the chunk has defined its tag", async () => {
+    // The chunk's import resolved, but nothing has defined the tag yet.
     setImplLoader(() => Promise.resolve({}));
     const el = mount(CARD_TYPE);
     el.setConfig(VALID);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
 
     expect(customElements.get(CARD_IMPL_TAG)).toBeFalsy();
     expect(el.querySelector(CARD_IMPL_TAG)).toBeNull();
@@ -44,11 +49,42 @@ describe("waiting for a guarded implementation tag", () => {
 
     customElements.define(CARD_IMPL_TAG, StubImpl);
     await customElements.whenDefined(CARD_IMPL_TAG);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
 
     const impl = el.querySelector(CARD_IMPL_TAG) as StubImpl;
     expect(impl).toBeTruthy();
     expect(impl.config).toEqual(VALID);
+  });
+
+  it("waits on the registry that is current at mount time, not the one the entry defined on", async () => {
+    // HA swaps window.customElements in after the entry has run. The chunk (and HA) will use the
+    // replacement, so a host that captured the original would resolve against the wrong one.
+    let visible = false;
+    let release: (() => void) | undefined;
+    const swapped = {
+      get: (tag: string) => (tag === CARD_IMPL_TAG && !visible ? undefined : original.get(tag)),
+      whenDefined: (tag: string) =>
+        tag === CARD_IMPL_TAG && !visible
+          ? new Promise<void>((resolve) => {
+              release = resolve;
+            })
+          : original.whenDefined(tag),
+      define: original.define.bind(original),
+    };
+    Object.defineProperty(window, "customElements", { value: swapped, configurable: true, writable: true });
+
+    setImplLoader(() => Promise.resolve({}));
+    const el = mount(CARD_TYPE);
+    el.setConfig(VALID);
+    await tick();
+    // The original registry has the tag (from the test above); the current one says it doesn't.
+    expect(original.get(CARD_IMPL_TAG)).toBeTruthy();
+    expect(el.querySelector(CARD_IMPL_TAG)).toBeNull();
+
+    visible = true;
+    release?.();
+    await tick();
+    expect(el.querySelector(CARD_IMPL_TAG)).toBeTruthy();
   });
 
   it("falls back to the load notice when the tag never arrives", async () => {

@@ -12,8 +12,8 @@ const litVersion = JSON.parse(readFileSync(path.join(root, "node_modules/lit/pac
 export const ENTRY_FILENAME = "listapp-list-card.js";
 export const IMPL_FILENAME = "listapp-list-card-impl.js";
 
-// The entry must stay small enough to define the tags inside HA's 2s deadline —
-// see docs/card.md#fast-registration
+// The entry stays small so the tags are defined as early as possible (HA gives a requested card
+// 2s to define its tag) and Lit stays in the lazy chunk — see docs/card.md#fast-registration
 const ENTRY_MAX_BYTES = 8 * 1024;
 
 const credit = [

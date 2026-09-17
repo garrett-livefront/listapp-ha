@@ -114,36 +114,29 @@ HACS installs, or a manual step, to get the card. Bundling in the integration an
 gets both from one install — same reasoning as HA's own "local brand images" approach for the
 `brand/` directory.
 
-## <a id="fast-registration"></a>Fast registration and the 2 s deadline
+## <a id="fast-registration"></a>Fast registration: the entry/implementation split
 
-Fix for the intermittent "Configuration error after restart" Garrett and a second user hit on
-2026-09-15 — the residue left after [integration-level registration](#integration-level) (PR #22)
-closed the 404 window.
+HA's `src/panels/lovelace/create-element/create-element-base.ts` decides whether a custom card is
+broken on a **timer**. In `_customCreate()`, when `customElements.get(tag)` is undefined it builds
+an error card, hides it with `display:none`, starts `setTimeout(..., TIMEOUT)` with `const TIMEOUT
+= 2000`, and calls `customElements.whenDefined(tag).then(...)` which clears that timer and fires
+`ll-rebuild`. A tag defined within 2 s of the card being requested is invisible to the user; one
+defined later un-hides "Configuration error" (HA still rebuilds the card when the tag eventually
+arrives, but the visible damage is done).
 
-HA's `src/panels/lovelace/create-element/create-element-base.ts` decides whether a card is broken on
-a **timer**. In `_customCreate()`, when `customElements.get(tag)` is undefined it builds an error
-card, hides it with `display:none`, starts `setTimeout(..., TIMEOUT)` with `const TIMEOUT = 2000`,
-and calls `customElements.whenDefined(tag).then(...)` which clears that timer and fires
-`ll-rebuild`. So the tag winning the race is invisible to the user; losing it un-hides
-"Configuration error". HA does still rebuild if the element defines later, but the visible damage is
-done — on Garrett's instance the card stayed wrong until a hard refresh.
+So the module that defines the tags should be small and dependency-free. The entry module
+(`src/entry.ts`, ~4.7 KB) defines `listapp-list-card` and `listapp-list-card-editor`, pushes to
+`window.customCards`, and carries `getStubConfig`/`getConfigElement` plus `resolveConfig` (all of
+`config.ts`). The ~74 KB implementation (Lit, the card, the icons, the editor) lives in
+`listapp-list-card-impl.js`, pulled in by a dynamic `import()` the first time a host is configured
+or connected. `npm run build` enforces the split: it fails if the entry gains a *static* import of
+the implementation, loses its dynamic one, or grows past an 8 KB budget.
 
-The old bundle was a single ~74 KB module calling `customElements.define` on its last line, so the
-whole of Lit, the card, the icons and the editor had to be fetched *and evaluated* before the tag
-existed. On a cold, just-restarted instance that regularly exceeded 2 s.
-
-The entry module is now **3.2 KB** and does only what has to happen before the deadline: define
-`listapp-list-card` and `listapp-list-card-editor`, push to `window.customCards`, and carry
-`getStubConfig`/`getConfigElement` plus `resolveConfig` (all of `config.ts`, which is
-dependency-free). The ~73 KB implementation moves to `listapp-list-card-impl.js`, pulled in by a
-dynamic `import()` after the tags are already registered.
-
-### Why not a Lovelace resource
-
-Switching from `add_extra_js_url` to a Lovelace resource does not help: resources aren't awaited
-either. `ha-panel-lovelace.ts` calls `loadLovelaceResources(...)` inside a `.then`, so dashboard
-rendering races resource evaluation exactly as it races ours. The deadline is the problem, not the
-delivery mechanism.
+The split (PR #24) was originally made on the theory that the old single 74 KB bundle was what
+lost the 2 s race after a restart. That was not the cause — see [Registry
+patching](#registry-patching) — but the split is kept: a small entry is still what puts the
+tag-defining code first, and the lazy chunk keeps Lit out of every dashboard that has no Listapp
+card visible.
 
 ### The wrapper
 
@@ -174,105 +167,106 @@ The wrapper has to behave correctly in the window before the implementation exis
   implementation returns. Both delegate once the chunk has landed.
 - Nothing is rendered during the gap. An empty card for a few hundred milliseconds beats a spinner
   or a placeholder that resizes.
-- A rejected import (offline, or the chunk 404ing) is caught and replaced with a readable notice
-  rather than an element that never paints.
+- The host waits (bounded by `REGISTRATION_TIMEOUT_MS`, 2 s) for the chunk's own tag via
+  `whenDefined` before mounting, always on the **current** `window.customElements` — see
+  [Registry patching](#registry-patching) for why that matters. A rejected import (offline, or
+  the chunk 404ing) or a tag that never arrives is caught and replaced with a readable notice rather
+  than an element that never paints.
 
 One `import()` is shared by every card on the dashboard and by the editor — the module-level promise
 is memoised, so ten Listapp cards fetch the chunk once.
-
-`npm run build` enforces the win rather than trusting it: the build fails if the entry ever gains a
-*static* import of the implementation, loses its dynamic one, or grows past an 8 KB budget.
 
 ### <a id="cache-busting"></a>Cache busting across two files
 
 The implementation is built first; its content hash is baked into the entry as
 `./listapp-list-card-impl.js?v=<hash>`, so the chunk gets its own cache-busting query and the entry's
 bytes change whenever the chunk does. `frontend.py` then hashes **every** `*.js` in the directory for
-the entry's own `?v=`, which makes a chunk-only change bust the entry too. `StaticPathConfig` now
+the entry's own `?v=`, which makes a chunk-only change bust the entry too. `StaticPathConfig`
 registers the whole `frontend/` directory rather than the single file, since the entry's sibling
 chunk has to be reachable at the same base URL.
 
-## <a id="registry-patching"></a>Registry patching and verified registration
+## <a id="registry-patching"></a>Registry patching: HA replaces `window.customElements`
 
-The "Configuration error until another reload" failure survived [fast
-registration](#fast-registration), intermittently after an HA restart or hard reload. Measured live
-on Garrett's instance on 2026-09-15, in the failed state, which rules the deadline out as the cause:
+*(Anchor kept from the earlier, wrong diagnosis this section replaces — PR #27's "a wrapper
+swallows `define`" — so old links still land here.)*
 
-- The entry module `/listapp_frontend/listapp-list-card.js` was fetched at **123 ms**, took **251
-  ms**, transferred **1857 bytes**, HTTP **200** — an order of magnitude inside the 2 s deadline, and
-  not a 404.
-- **22 s later** `customElements.get('listapp-list-card')` was `undefined`, and so were
-  `listapp-list-card-impl` and `listapp-list-card-editor` — but `window.customCards` **did** contain
-  our entry. The push happens after the `define` calls, so the module ran past them, defined nothing,
-  and threw nothing.
-- The tag was genuinely free: `customElements.define('listapp-list-card', class extends HTMLElement
-  {})` succeeded by hand in that state.
-- `await import('/listapp_frontend/listapp-list-card.js?probe=<ts>')` on the same page then defined
-  all three tags immediately. The entry itself only registers the two host tags; the third
-  (`listapp-list-card-impl`) followed a moment later, because the re-imported entry's hosts mounted
-  and pulled in the implementation chunk, which registers it. Both defines took on the retry — the
-  point of the observation is that nothing about the page had changed but the timing.
-- The registry was patched: `Function.prototype.toString.call(customElements.define)` and `.get` were
-  both non-native, `Object.getPrototypeOf(customElements).constructor.name` was `"x"` (minified), and
-  `Element.prototype.attachShadow` was patched too — though `customElements instanceof
-  CustomElementRegistry` still held. A detached iframe on the same page reported a **native**
-  `define`, so the patch is installed on the main window specifically. The shape of it — registry
-  plus `attachShadow` — is a **scoped custom element registry polyfill**, which HA's own frontend
-  ships. A second user sees the same failure.
+The "Configuration error until another reload" that survived integration-level registration (PR
+#22) and the bundle split (PR #24) is a **load-order race between our entry module and HA's own
+`app.js`**, and it is deterministic once you know which one evaluated first:
 
-  **card-mod was suspected first and is not the culprit** — recorded here so the wrong diagnosis
-  doesn't get made twice. card-mod patches the *prototypes of already-defined* HA elements via
-  `whenDefined`/`get`; it never wraps `define`. The guard below is therefore written against any
-  registry wrapper, including HA's own scoped-registry polyfill, and its warning deliberately names
-  no specific add-on.
+1. HA's `src/html/index.html.template` loads its bundles and every `add_extra_js_url` module as
+   **concurrent dynamic imports** from inline classic scripts:
+   `import("<core.js>"); import("<app.js>");` and then, right after, `import("/listapp_frontend/…")`.
+   Dynamic imports carry no ordering guarantee. Ours is one ~4.7 KB file; `app.js` is a multi-MB
+   graph with chunk imports. After an HA restart or a hard reload (service worker bypassed, all from
+   network) the Listapp entry usually finishes first.
+2. `app.js`'s first line (`src/entrypoints/app.ts`) is
+   `import "@webcomponents/scoped-custom-element-registry/scoped-custom-element-registry.min"`,
+   present in every HA frontend release from at least 2024.5 through today. That polyfill captures
+   the native registry, then **replaces the global**:
+   `Object.defineProperty(window, "customElements", { value: new CustomElementRegistry() })` — a
+   brand-new object with an empty definitions map. Nothing already defined natively is carried over,
+   and its `get()`/`whenDefined()` consult only that map.
+3. `_customCreate()` asks the *replacement* for our tag: `get` is undefined, `whenDefined` waits on
+   the replacement's map where the tag never arrives, and after 2 s the red card shows. Permanently.
 
-So a third-party wrapper around `customElements.define` can swallow a call: no exception, no
-definition. The 2 s-deadline explanation does **not** cover this — that one requires the tag to be
-undefined *at render time and then defined later*, and it is driven by how long the bundle takes to
-arrive and evaluate. Here the bundle arrived in 251 ms, evaluated to completion, and the tag was
-still undefined 22 s afterwards. Shrinking or speeding up the entry could never have fixed it.
+Every measurement taken live in the failed state on 2026-09-15 is what that sequence produces:
+the entry fetched with HTTP 200 in 251 ms; `customElements.get('listapp-list-card')` undefined 22 s
+later while `window.customCards` **did** contain our entry (the module ran to completion, on the
+registry that was then discarded); `customElements.define`/`get` non-native with a minified class
+name and `Element.prototype.attachShadow` patched (the polyfill); a detached iframe reporting a
+native `define` (the swap is per-window). Even the "tag was genuinely free — defining it by hand
+succeeded" observation is the polyfill: its `define` does `standInClass = nativeGet(tagName)`,
+finds our natively registered class, reuses it as the stand-in and does not throw. The
+implementation tag was also undefined simply because HA never instantiated the host, so the lazy
+chunk was never imported. card-mod was suspected first and is not involved.
 
-The entry therefore **verifies after every `define` with `get`** rather than assuming it took, and
-retries: a microtask, then tasks at 0 ms, 100 ms and 500 ms — five attempts in total, then it stops
-and `console.warn`s once, naming registry patching as the likely cause so the next person doesn't
-re-measure all of the above. The delays are short because the re-import probe defined the tags
-instantly: the patch's window is transient, not permanent, so spacing attempts out further buys
-nothing and risks landing after HA has already rendered the error card.
+Two other integrations have documented the identical failure and cause
+([ga-frontend-bundle #19](https://github.com/greenautarky/ga-frontend-bundle/pull/19),
+[stormshaker/haeo #1](https://github.com/stormshaker/haeo/issues/1)).
 
-The same guard covers the **implementation** tags. `listapp-list-card-impl` and
-`listapp-list-card-editor-impl` are registered by the lazily imported chunk, long after the entry
-ran, so a wrapper still swallowing calls at that moment would leave the host mounting an
-`HTMLUnknownElement` and calling `setConfig` on it — the guarded entry would report success and the
-card would still break. `src/register.ts` holds the shared retry, and all four defines go through
-it. The host also waits for its implementation tag (`whenDefined`) before mounting, so a define that
-only takes on the third attempt still yields a working card rather than a dead one; past the wait it
-shows the same readable notice as a failed chunk load. That wait is 2 s, which is not the retry
-chain's own span: five attempts at a microtask then 0, 100 and 500 ms exhaust in roughly 600 ms. The
-two are deliberately independent, because the chunk's chain only starts once the chunk has been
-fetched and evaluated, which can be well after the host started waiting.
-The warning is module state, so each bundle warns at most once however many tags were swallowed.
-*(Both were Copilot review comments on PR #27.)*
+### The fix: define now, and again on the replacement
 
-`window.customCards` is only pushed **once both `listapp-list-card` and `listapp-list-card-editor`
-resolve** — a card advertised with no editor is configurable from the picker only into an error.
-Originally it was pushed once the card tag alone resolved; Copilot's review of PR #27 pointed out the
-editor half, and the stricter gate matches the trade already chosen here. Advertising the
-card to the picker while no element exists is precisely what turned a silent failure into HA's
-context-free "Configuration error" — the card appeared installed and every dashboard using it broke.
-An unlisted card is the better failure: the console warning explains it, and a reload fixes it.
+`src/register.ts#defineWithSwapGuard` defines on whatever `window.customElements` is *now*, then
+watches for it to be replaced and defines again on the replacement:
 
-### Why not borrow a pristine registry from an iframe
+- The primary signal is `registry.whenDefined("home-assistant")` on the registry we defined on.
+  `<home-assistant>` is defined by the same bundle right after the polyfill installs; on the native
+  registry that resolves when the polyfill registers its stand-in for the tag, on the polyfilled one
+  when HA defines it. Either way it fires once HA's app has evaluated and the registry is final.
+- A poll every 250 ms for 30 s, comparing `window.customElements` by identity, covers a swap by
+  anything that doesn't define `<home-assistant>`.
+- The re-define goes through `defineAll`, which is **idempotent**: a tag the registry already has is
+  skipped, a `define` that throws because the tag landed meanwhile counts as success, and only
+  `get()` decides. `onAllResolved` (the `window.customCards` push) runs once per registry on which
+  both host tags are defined — a card advertised with no element is exactly what turns a silent
+  failure into HA's context-free "Configuration error".
 
-A same-origin `<iframe>` does have an unpatched `customElements` — measured on the affected page, a
-detached iframe reports a native `define` while the main window's is wrapped — and it was evaluated,
-but it can't help here and is deliberately not shipped. A registry is per-window: defining the tag in the iframe
-registers it in *that* document, so `document.createElement('listapp-list-card')` in HA's document
-still gets an `HTMLUnknownElement`. Stealing the iframe's native `define` and invoking it against the
-main registry (`iframeDefine.call(window.customElements, ...)`) isn't a way around it either — the
-native method reaches the registry through internal slots the patched object no longer backs
-directly, and the constructor would belong to the iframe's realm, so its `HTMLElement` prototype
-chain doesn't match the host document's. Retrying the host registry is the only approach that
-actually defines the tag where HA will look for it.
+The polyfill accepts the second define because it reuses the natively registered class as its
+stand-in (above), and HA's pending `whenDefined` on the replacement resolves and fires `ll-rebuild`,
+so a card that was already waiting renders.
+
+The same guard covers the implementation tags (`listapp-list-card-impl`,
+`listapp-list-card-editor-impl`), and the host waits for its implementation tag on the **current**
+`window.customElements`, not on a reference captured before the swap: the chunk is imported after
+HA has created the host, i.e. after the swap, so it defines on the replacement.
+
+PR #27's verify-then-retry chain (`defineVerified`, retries at 0/100/500 ms, the "define did not
+take" warning) was built on the wrong diagnosis and could never have detected this: it verified with
+`get()` on the *same registry object* it had just defined on, which naturally reported success, and
+then the global was replaced out from under it. It has been removed. A vitest reproduction of the
+swap is `frontend/test/register-swap.test.ts`; the Playwright reproduction against the real
+polyfill and a copy of HA's `_customCreate` logic is described in the PR that made this change.
+
+### Why not a Lovelace resource
+
+Lovelace resources *are* immune to this: `ha-panel-lovelace.ts` loads them via
+`loadLovelaceResources` → `loadModule`, which appends a `<script type="module">` from inside the
+panel — necessarily after `app.js` has evaluated and the registry is final. That is why HACS cards
+never hit it. It is still not the right delivery here: resources live in the storage-mode
+`lovelace_resources` collection only (YAML-mode dashboards need a manual `resources:` entry), and
+it would add a `lovelace` dependency and a second install/cleanup story. `add_extra_js_url` plus the
+swap guard gets the same guarantee.
 
 ## Architecture
 
@@ -280,7 +274,7 @@ Source lives in `frontend/` at the repo root (Lit 3 + TypeScript, bundled by esb
 output is **committed** because HACS installs straight from the git repository — there is nowhere
 for a bundler to run on the user's instance. It builds to two dependency-free ES modules, and
 **both** are committed and shipped:
-`custom_components/listapp/frontend/listapp-list-card.js` (a ~3.3 KB entry that registers the tags)
+`custom_components/listapp/frontend/listapp-list-card.js` (a ~4.7 KB entry that registers the tags)
 and `custom_components/listapp/frontend/listapp-list-card-impl.js` (a ~73 KB, ~20 KB gzipped — of
 which Lit is roughly two thirds — implementation chunk the entry imports dynamically). Shipping the
 entry without its sibling would leave the lazy import 404ing at runtime, so `check:fresh` guards
@@ -290,6 +284,7 @@ both files; see [Fast registration](#fast-registration) for why the split exists
 | --- | --- |
 | `src/entry.ts` | the built entry: registers the tags, lazy-loads and delegates to the implementation |
 | `src/tags.ts` | the tag names, so `entry.ts` can reference them without importing Lit |
+| `src/register.ts` | idempotent `defineAll` and the registry swap guard (see [Registry patching](#registry-patching)) |
 | `src/listapp-list-card.ts` | the `LitElement`; rendering, subscriptions, event handlers, styles |
 | `src/model.ts` | pure state derivation: split/collapse items, viewer gating, card state, availability classification, move → `previous_uid` |
 | `src/config.ts` | option defaults and validation, `getStubConfig` |
