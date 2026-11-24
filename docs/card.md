@@ -183,7 +183,8 @@ The implementation is built first; its content hash is baked into the entry as
 bytes change whenever the chunk does. `frontend.py` then hashes **every** `*.js` in the directory for
 the entry's own `?v=`, which makes a chunk-only change bust the entry too. `StaticPathConfig`
 registers the whole `frontend/` directory rather than the single file, since the entry's sibling
-chunk has to be reachable at the same base URL.
+chunk has to be reachable at the same base URL. The hash is computed in the executor, because HA
+flags file reads on the event loop (`Detected blocking call to open`).
 
 ## <a id="registry-patching"></a>Registry patching: HA replaces `window.customElements`
 
