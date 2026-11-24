@@ -14,6 +14,8 @@ from custom_components.listapp.frontend import (
     CARD_URL,
     IMPL_FILENAME,
     URL_BASE,
+    _bundle_hash,
+    _frontend_dir,
     async_register_frontend,
 )
 
@@ -51,6 +53,21 @@ async def test_registers_static_path_and_extra_js_once(hass: HomeAssistant) -> N
         assert add_extra_js_url.call_count == 1
         url = add_extra_js_url.call_args[0][1]
         assert url.startswith(f"{CARD_URL}?v=")
+
+
+async def test_bundle_hash_is_computed_in_the_executor(hass: HomeAssistant) -> None:
+    """HA flags file reads on the event loop — see docs/card.md#cache-busting."""
+    hass.http = AsyncMock()
+    with (
+        patch("custom_components.listapp.frontend.add_extra_js_url") as add_extra_js_url,
+        patch.object(
+            hass, "async_add_executor_job", wraps=hass.async_add_executor_job
+        ) as executor_job,
+    ):
+        await async_register_frontend(hass)
+
+    assert [call.args[0] for call in executor_job.call_args_list] == [_bundle_hash]
+    assert add_extra_js_url.call_args[0][1] == f"{CARD_URL}?v={_bundle_hash(_frontend_dir())}"
 
 
 async def test_version_query_tracks_bundle_content(hass: HomeAssistant, tmp_path) -> None:

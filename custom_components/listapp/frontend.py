@@ -55,5 +55,6 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
         await hass.http.async_register_static_paths(
             [StaticPathConfig(URL_BASE, str(directory), cache_headers=True)]
         )
-        add_extra_js_url(hass, f"{CARD_URL}?v={_bundle_hash(directory)}")
+        bundle_hash = await hass.async_add_executor_job(_bundle_hash, directory)
+        add_extra_js_url(hass, f"{CARD_URL}?v={bundle_hash}")
         domain_data[_REGISTERED] = True
